@@ -1,0 +1,70 @@
+# A docker-compose file with inline network configuration and no
+# additional docker containers. The network container will be
+# configured with the following mininet configuration:
+#
+# Test Topology:
+#
+#       r0
+#       /|\
+#      / | \
+#    s1 s2  s3
+#    /   |   \
+#   /    |    \
+#  h1   h2    h3
+#
+
+version: "2.4"
+services:
+  network:
+    build: {context: .}
+    image: conlink
+    pid: host
+    network_mode: none
+    cap_add: [SYS_ADMIN, SYS_NICE, NET_ADMIN]
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker
+      - ./:/test
+    command: /sbin/conlink.py /test/test1-compose.yaml
+    x-network:
+      mininet-cfg:
+        switches:
+          - name: s1
+          - name: s2
+          - name: s3
+        hosts:
+          - name: r0
+            opts: {ip: "192.168.1.1/24"}
+          - name: h1
+            opts: {ip: "192.168.1.100/24", defaultRoute: "via 192.168.1.1"}
+          - name: h2
+            opts: {ip: "172.16.0.100/12",  defaultRoute: "via 172.16.0.1"}
+          - name: h3
+            opts: {ip: "10.0.0.100/8",     defaultRoute: "via 10.0.0.1"}
+        links:
+          - left:  s1
+            right: r0
+            opts:  {intfName2: "r0-eth1", params2: {ip: "192.168.1.1/24"}}
+          - left:  s2
+            right: r0
+            opts:  {intfName2: "r0-eth2", params2: {ip: "172.16.0.1/12"}}
+          - left:  s3
+            right: r0
+            opts:  {intfName2: "r0-eth3", params2: {ip: "10.0.0.1/8"}}
+          - left:  h1
+            right: s1
+          - left:  h2
+            right: s2
+          - left:  h3
+            right: s3
+        commands:
+          - node: r0
+            command: "sysctl net.ipv4.ip_forward=1"
+          - node: h1
+            command: "python2 -m SimpleHTTPServer 81"
+          - node: h2
+            command: "python2 -m SimpleHTTPServer 82"
+          - node: h3
+            command: "python2 -m SimpleHTTPServer 83"
+

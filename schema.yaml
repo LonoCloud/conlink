@@ -1,0 +1,89 @@
+links:
+  type: list
+  schema:
+    type: dict
+    schema:
+      left:
+        type: dict
+        required: true
+        schema:
+          container: {type: string, required: true, regex: '.*_[0-9]+$'}
+          intf:      {type: string, required: true}
+          ip:        {type: string, required: false,
+                      regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
+          mac:       {type: string, required: false,
+                      regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
+      right:
+        type: dict
+        required: true
+        schema:
+          container: {type: string, required: true, regex: '.*_[0-9]+$'}
+          intf:      {type: string, required: true}
+          ip:        {type: string, required: false,
+                      regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
+          mac:       {type: string, required: false,
+                      regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
+commands:
+  type: list
+  schema:
+    type: dict
+    schema:
+      container: {type: string, required: true, regex: '.*_[0-9]+$'}
+      command:
+        required: true
+        oneof: [ {type: string}, {type: list, schema: {type: string}} ]
+
+mininet-cfg:
+  type: dict
+  schema:
+
+    switches: 
+      type: list
+      required: false
+      schema:
+        type: dict
+        schema:
+          name: {type: string, required: true}
+          opts: {type: dict,   required: false}
+
+    hosts:
+      type: list
+      required: false
+      schema:
+        type: dict
+        schema:
+          name: {type: string, required: true}
+          opts: {type: dict,   required: false}
+
+    links:
+      type: list
+      required: false
+      schema:
+        type: dict
+        schema:
+          left:  {type: string, required: true}
+          right: {type: string, required: true}
+          opts:  {type: dict,   required: false}
+
+    interfaces:
+      type: list
+      required: false
+      schema:
+        type: dict
+        schema:
+          node:     {type: string, required: true}
+          name:     {type: string, required: true}
+          origName: {type: string, required: false}
+          opts:     {type: dict,   required: false}
+
+    commands:
+      type: list
+      required: false
+      schema:
+        type: dict
+        schema:
+          node: {type: string,  required: true}
+          sync: {type: boolean, required: false}
+          command:
+            required: true
+            oneof: [ {type: string}, {type: list, schema: {type: string}} ]
