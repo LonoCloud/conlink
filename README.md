@@ -53,7 +53,7 @@ will setup a network configuration that is connected to the `ZZZ_node`
 container:
 
 ```
-./examples/test3-start.sh
+./examples/test3-start.sh ZZZ_network ZZZ_node
 ```
 
 In terminal 1, ping the `internet` namespace within the network

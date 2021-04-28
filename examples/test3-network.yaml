@@ -1,12 +1,12 @@
 # "Physical" network interface definitions.
 # This defines container to container links.
 links:
-  - left:  {container: ZZZ_node,    intf: ext-intf,  ip: 10.0.1.1/16}
-    right: {container: ZZZ_conlink, intf: node-intf}
+  - left:  {container: '${NODE_NAME}',     intf: ext-intf,  ip: 10.0.1.1/16}
+    right: {container: '${NETWORK_NAME}',  intf: node-intf}
 
 # Commands to run in containers after they are connected
 commands:
-  - container: ZZZ_node
+  - container: '${NODE_NAME}'
     command:
       - sh -c 'ip route | grep -qs default && ip route del default'
       - ip route add default via 10.0.0.1

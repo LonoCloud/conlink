@@ -1,6 +1,7 @@
 #!/usr/bin/env -S python3 -u
 
 import argparse, os, re, subprocess, shutil, sys, time
+from string import Template
 from cerberus import Validator
 import config_mininet
 import docker
@@ -29,6 +30,16 @@ def parseArgs():
         parser.error("either --network-file or --compose-file is required")
 
     return args
+
+def envInterpolate(obj, env):
+    if isinstance(obj, str):
+	# error on lookup failure (use safe_substitute to ignore)
+        return Template(obj).substitute(env)
+    if isinstance(obj, dict):
+        return {k: envInterpolate(v, env) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [envInterpolate(v, env) for v in obj]
+    return obj
 
 def initContainerState(networkConfig):
     """
@@ -286,7 +297,7 @@ def start(**opts):
     if ctx.networkFile:
         vprint(1, "Loading network file %s" % ctx.networkFile)
         rawNetworkConfig = yaml.full_load(open(ctx.networkFile))
-        # TODO: do environment variable interpolation
+        rawNetworkConfig = envInterpolate(rawNetworkConfig, os.environ)
 
     if not rawNetworkConfig:
         print("No network config found.")
