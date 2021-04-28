@@ -40,3 +40,25 @@ docker-compose -f examples/test2-compose.yaml exec node2 ping 8.8.8.8
 ```
 
 
+### test3
+
+In terminal 1, start a container named `ZZZ_node`:
+
+```
+docker run -it --name=ZZZ_node --rm --cap-add NET_ADMIN alpine sh
+```
+
+In another terminal, start the conlink container `ZZZ_network` that
+will setup a network configuration that is connected to the `ZZZ_node`
+container:
+
+```
+./examples/test3-start.sh
+```
+
+In terminal 1, ping the `internet` namespace within the network
+configuration setup by the `conlink` container.
+
+```
+ping 8.8.8.8
+```
