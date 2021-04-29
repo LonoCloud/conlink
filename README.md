@@ -3,6 +3,16 @@
 Create (layer 2 and layer 3) networking between containers using
 a declarative configuration.
 
+## System Capabilities/Permissions
+
+The conlink container will need the same level of network related
+system capabilities as the containers that it will connect to. At
+a minimum `SYS_ADMIN` and `NET_ADMIN` are required but depending on
+what the containers require then other capabilities will also be
+required. In particular, if the container uses systemd, then it will
+likely use `SYS_NICE` and `NET_BROADCAST` and conlink will likewise
+need those capabilities.
+
 
 ## Examples
 

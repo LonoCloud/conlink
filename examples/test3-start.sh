@@ -11,7 +11,8 @@ docker run --rm \
     --name ${NETWORK_NAME} \
     --pid host \
     --network none \
-    --cap-add SYS_ADMIN --cap-add SYS_NICE --cap-add NET_ADMIN \
+    --cap-add SYS_ADMIN --cap-add SYS_NICE \
+    --cap-add NET_ADMIN --cap-add NET_BROADCAST \
     -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /var/lib/docker:/var/lib/docker \

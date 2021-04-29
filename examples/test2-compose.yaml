@@ -11,7 +11,7 @@ services:
     image: conlink
     pid: host
     network_mode: none
-    cap_add: [SYS_ADMIN, SYS_NICE, NET_ADMIN]
+    cap_add: [SYS_ADMIN, SYS_NICE, NET_ADMIN, NET_BROADCAST]
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/run/docker.sock:/var/run/docker.sock
