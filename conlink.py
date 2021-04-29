@@ -172,6 +172,7 @@ def veth_span(name0, ctx):
         if ip1:  linkCmd.extend(["--ip1",  ip1])
 
         idx = link['index']
+        env = {}
         print("Link {idx}: {name0}/{intf0} -> {name1}/{intf1}".format(**locals()))
         if ctx.verbose >= 2:
             print("    left  PID:       {pid0}".format(pid0=pid0))
@@ -180,9 +181,10 @@ def veth_span(name0, ctx):
             print("    right MAC:       {mac1}".format(mac1=mac1 or "<AUTOMATIC>"))
             print("    left  IP:        {ip0}" .format(ip0=ip0 or '<UNSET>'))
             print("    right IP:        {ip1}" .format(ip1=ip1 or '<UNSET>'))
+            env = {"VERBOSE": "1"}
 
         # Make the veth link
-        subprocess.run(linkCmd, check=True)
+        subprocess.run(linkCmd, check=True, env=env)
 
         # Accounting
         link['connected'] = True
@@ -266,18 +268,18 @@ def start(**opts):
     def vprint(v, *a):
         if ctx.verbose >= v: print(*a)
 
-    vprint(2, "Settings: %s" % opts)
+    vprint(1, "Settings: %s" % opts)
 
     rawNetworkConfig = None
     if ctx.composeFile:
-        vprint(1, "Loading compose file %s" % ctx.composeFile)
+        vprint(0, "Loading compose file %s" % ctx.composeFile)
         composeConfig = yaml.full_load(open(ctx.composeFile))
 
         vprint(1, "Determining container ID")
         cgroups = open("/proc/self/cgroup").read()
         myCID = re.search(r"/docker/([^/\n]*)", cgroups).groups()[0]
 
-        vprint(2, "Loading container JSON config")
+        vprint(1, "Loading container JSON config")
         myConfig = json.load(open(CONFIG_FILE_TEMPLATE % myCID))
         labels = myConfig["Config"]["Labels"]
         myName = labels['com.docker.compose.service']
@@ -290,9 +292,9 @@ def start(**opts):
             vprint(1, "Using inline x-network config")
             rawNetworkConfig = myService['x-network']
 
-        vprint(2, "myCID:            %s" % myCID)
-        vprint(2, "myName:           %s" % myName)
-        vprint(2, "myService:        %s" % myService)
+        vprint(1, "myCID:            %s" % myCID)
+        vprint(1, "myName:           %s" % myName)
+        vprint(1, "myService:        %s" % myService)
 
         containerPrefix = '/%s_' % projectName
         containerFilter = getComposeContainers(
@@ -307,12 +309,12 @@ def start(**opts):
         containerFilter = None
         labelFilter = {}
 
-    vprint(2, "containerPrefix:  %s" % containerPrefix)
-    vprint(2, "containerFilter:  %s" % containerFilter)
-    vprint(2, "labelFilter:      %s" % labelFilter)
+    vprint(1, "containerPrefix:  %s" % containerPrefix)
+    vprint(1, "containerFilter:  %s" % containerFilter)
+    vprint(1, "labelFilter:      %s" % labelFilter)
 
     if ctx.networkFile:
-        vprint(1, "Loading network file %s" % ctx.networkFile)
+        vprint(0, "Loading network file %s" % ctx.networkFile)
         rawNetworkConfig = yaml.full_load(open(ctx.networkFile))
         rawNetworkConfig = envInterpolate(rawNetworkConfig, os.environ)
 
@@ -321,9 +323,9 @@ def start(**opts):
         print("Use --network-file or x-network (in %s service)" % myService)
         sys.exit(2)
 
-    print("Validating network configuration")
-    vprint(1, "Loading network schema file %s" % ctx.networkSchema)
+    vprint(0, "Loading network schema file %s" % ctx.networkSchema)
     netSchema = yaml.full_load(open(ctx.networkSchema))
+    vprint(0, "Validating network configuration")
     v = Validator(netSchema)
     # TODO: assure no references to non-existent container names
     if not v.validate(rawNetworkConfig):
@@ -351,7 +353,7 @@ def start(**opts):
         print("       load the module (modprobe openvswitch) to continue")
         time.sleep(5)
 
-    print("Starting openvswitch service")
+    vprint(0, "Starting openvswitch service")
     subprocess.run(["/usr/share/openvswitch/scripts/ovs-ctl",
         "start", "--system-id=random"], check=True)
 
@@ -361,17 +363,17 @@ def start(**opts):
             decode=True,
             filters={"event": "start", **labelFilter})
 
-    print("Writing pid to /tmp/setup.pid")
-    open("/tmp/setup.pid", 'x').write(str(os.getpid()))
+    vprint(0, "Writing pid to /var/run/conlink.pid")
+    open("/var/run/conlink.pid", 'x').write(str(os.getpid()))
 
-    print("Reached healthy state")
+    vprint(0, "Reached healthy state")
 
-    print("Handling already running containers")
+    vprint(0, "Handling already running containers")
     for c in client.containers.list(sparse=True, filters=labelFilter):
         #print("container: %s, %s" % (c.id, c.attrs))
         handle_container(c.id, client, ctx)
 
-    print("Listening for container start events")
+    vprint(0, "Listening for container start events")
     while True:
         done = True
         for cname, cdata in containerState.items():
@@ -381,8 +383,9 @@ def start(**opts):
         event = eventIterator.next()
         #print("event: %s" % event)
         handle_container(event['id'], client, ctx)
+    vprint(0, "All container are connected")
 
-    print("Starting mininet")
+    vprint(0, "Starting mininet")
     vopt = {0: 'info', 1: 'info', 2: 'debug'}[ctx.verbose]
     config_mininet.run(networkConfig, verbose=vopt)
 
