@@ -21,6 +21,9 @@ RUN pip3 install pyyaml mininet cerberus docker psutil
 #############################################################
 FROM base as runtime
 
+# Addition services/debug utilties we might want
+RUN apt-get -y install strace socat wget iperf3 dnsmasq
+
 COPY --from=python3-packages /usr/lib/python3/ /usr/lib/python3/
 COPY --from=python3-packages /usr/lib/python3.8/ /usr/lib/python3.8/
 COPY --from=python3-packages /usr/local/lib/python3.8/ /usr/local/lib/python3.8/
