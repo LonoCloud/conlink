@@ -16,7 +16,7 @@ FROM base as python3-packages
 # more config-mininet deps (mininet is just for mnexec executable)
 RUN apt-get -y install python3-pip python3-pkg-resources mininet
 
-RUN pip3 install pyyaml mininet cerberus docker
+RUN pip3 install pyyaml mininet cerberus docker psutil
 
 #############################################################
 FROM base as runtime

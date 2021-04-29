@@ -5,6 +5,7 @@ from string import Template
 from cerberus import Validator
 import config_mininet
 import docker
+import psutil
 import json, yaml
 
 CONFIG_FILE_TEMPLATE = "/var/lib/docker/containers/%s/config.v2.json"
@@ -157,7 +158,7 @@ def veth_span(name0, ctx):
         mac0,  mac1  = link0.get('mac'),   link1.get('mac')
         ip0,   ip1   = link0.get('ip'),    link1.get('ip')
 
-        linkCmd = ["/sbin/veth-link.sh", intf0, intf1, pid0, pid1]
+        linkCmd = ["/sbin/veth-link.sh", intf0, intf1, str(pid0), str(pid1)]
         if mac0: linkCmd.extend(["--mac0", mac0])
         if mac1: linkCmd.extend(["--mac1", mac1])
         if ip0:  linkCmd.extend(["--ip0",  ip0])
@@ -205,10 +206,19 @@ def handle_container(cid, client, ctx):
             if ctx.verbose >= 1:
                 print("No config for '%s' (%s), ignoring" % (cname, pid))
             return
-        # TODO: try State.Pid first, if process not running then fall
-        # back to top()
-        processes = container.top()['Processes']
-        pid = processes[0][1]
+
+        _pid = container.attrs['State']['Pid']
+        if psutil.pid_exists(_pid):
+            pid = _pid
+        else:
+            # If first process fork'd/exec'd then find first still
+            # running pid in the container
+            if ctx.verbose >= 1:
+                print("Process %s (State.Pid) gone, trying top()" % _pid)
+            for _, _pid in [p[1] for p in container.top()['Processes']]:
+                if psutil.pid_exists(_pid):
+                    pid = _pid
+                    break
     except docker.errors.APIError as err:
         if err.status_code != 409: raise
     if not pid:
