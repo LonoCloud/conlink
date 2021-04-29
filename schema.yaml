@@ -23,6 +23,9 @@ links:
                       regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
           mac:       {type: string, required: false,
                       regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
+
+network-settings: {type: string}
+
 commands:
   type: list
   schema:
