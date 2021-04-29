@@ -24,11 +24,18 @@ def parseArgs():
     parser.add_argument('--compose-file', dest="composeFile",
             help="Docker compose file")
     parser.add_argument('--profile', action='append', dest="profiles",
+            default=[],
             help="Docker compose profile(s)")
     args = parser.parse_args()
 
     if args.networkFile is None and args.composeFile is None:
         parser.error("either --network-file or --compose-file is required")
+
+    # Allow comma and space delimited within each repeated arg
+    args.profiles = [z
+            for x in args.profiles
+            for y in x.split(' ')
+            for z in y.split(',')]
 
     return args
 
