@@ -387,6 +387,8 @@ def start(**opts):
 
     vprint(0, "Starting mininet")
     vopt = {0: 'info', 1: 'info', 2: 'debug'}[ctx.verbose]
+    # TODO: fix resource complaint trigged by this code:
+    # https://github.com/mininet/mininet/blob/dad451bf8fc8f9d0527b4a10b875660ac30e8b8b/mininet/util.py#L512
     config_mininet.run(networkConfig, verbose=vopt)
 
 
