@@ -3,7 +3,19 @@
 Create (layer 2 and layer 3) networking between containers using
 a declarative configuration.
 
-## System Capabilities/Permissions
+## Usage Notes
+
+### Asynchronous startup
+
+The container to container links are created after the first process
+in the container starts executing. This means the interfaces for those
+links will not be immediately present. The container code will need to
+account for this asynchronous interface behavior. The `node` service
+in `examples/test2-compose.yaml` shows a simple example of a container
+command that will wait for an interface to appear before continuing
+with another command.
+
+### System Capabilities/Permissions
 
 The conlink container will need the same level of network related
 system capabilities as the containers that it will connect to. At
