@@ -12,6 +12,7 @@ services:
     pid: host
     network_mode: none
     cap_add: [SYS_ADMIN, SYS_NICE, NET_ADMIN, NET_BROADCAST]
+    security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/run/docker.sock:/var/run/docker.sock
