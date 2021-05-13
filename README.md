@@ -3,6 +3,11 @@
 Create (layer 2 and layer 3) networking between containers using
 a declarative configuration.
 
+## Prerequisites
+
+* `openvswitch` kernel module loaded on the host
+* docker-compose version 1.25.4 or later.
+
 ## Usage Notes
 
 ### Asynchronous startup
