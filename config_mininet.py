@@ -46,7 +46,7 @@ class ConfigTopo( Topo ):
 
 class ConfigMininet( Mininet ):
     def __init__( self, cfg, *args, **kwargs):
-        self.cfg = self.loadConfig(cfg)
+        self.cfg = cfg
         topo = ConfigTopo(cfg=self.cfg)
         kwargs.setdefault( 'topo', topo )
         kwargs.setdefault( 'switch', OVSBridge )
@@ -90,31 +90,31 @@ class ConfigMininet( Mininet ):
                 info( '  %s: %s\n' % (spec['node'], cmd) )
                 node.cmd(cmd)
 
-    def loadConfig(self, cfg):
-        if isinstance(cfg, dict):
-            rawCfg = cfg
-        else:
-            if cfg.endswith('.yaml') or cfg.endswith('.yml'):
-                if not yaml:
-                    raise Exception('YAML file but no python-yaml module')
-                rawCfg = yaml.full_load(open(cfg))
-            else:
-                rawCfg = json.load(open(cfg))
-        topCfg = self.convertToUnicode(rawCfg)
-        return topCfg['mininet-cfg']
 
-    # From mininet/examples/miniedit.py:convertJsonUnicode
-    def convertToUnicode(self, text):
-        "Some part of Mininet don't like Unicode"
-        if (sys.version_info > (3, 0)): return text
-        if isinstance(text, dict):
-            return {self.convertToUnicode(key): self.convertToUnicode(value) for key, value in text.items()}
-        elif isinstance(text, list):
-            return [self.convertToUnicode(element) for element in text]
-        elif isinstance(text, unicode):
-            return text.encode('utf-8')
+def loadConfig(cfg):
+    if isinstance(cfg, dict):
+        rawCfg = cfg
+    else:
+        if cfg.endswith('.yaml') or cfg.endswith('.yml'):
+            if not yaml:
+                raise Exception('YAML file but no python-yaml module')
+            rawCfg = yaml.full_load(open(cfg))
         else:
-            return text
+            rawCfg = json.load(open(cfg))
+    return convertToUnicode(rawCfg)
+
+# From mininet/examples/miniedit.py:convertJsonUnicode
+def convertToUnicode(text):
+    "Some part of Mininet don't like Unicode"
+    if (sys.version_info > (3, 0)): return text
+    if isinstance(text, dict):
+        return {convertToUnicode(key): convertToUnicode(value) for key, value in text.items()}
+    elif isinstance(text, list):
+        return [convertToUnicode(element) for element in text]
+    elif isinstance(text, unicode):
+        return text.encode('utf-8')
+    else:
+        return text
 
 
 def run(cfg, verbose='info'):
@@ -142,4 +142,6 @@ if __name__ == '__main__':
             help='path to configuration file')
 
     args = parser.parse_args()
-    run(args.config, verbose=args.verbose)
+    topConfig = loadConfig(args.config)
+    config = topConfig.get('mininet-cfg', topConfig)
+    run(config, verbose=args.verbose)
