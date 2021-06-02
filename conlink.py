@@ -31,6 +31,11 @@ def parseArgs():
     if args.networkFile is None and args.composeFile is None:
         parser.error("either --network-file or --compose-file is required")
 
+    envv = os.environ.get('CONLINK_VERBOSE') or os.environ.get('VERBOSE')
+    if args.verbose == 0 and envv:
+        if envv.isnumeric(): args.verbose = int(envv)
+        else: args.verbose = 1
+
     # Allow comma and space delimited within each repeated arg
     args.profiles = [z
             for x in args.profiles
