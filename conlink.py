@@ -273,6 +273,25 @@ def start(**opts):
     def vprint(v, *a):
         if ctx.verbose >= v: print(*a)
 
+    def read_inode(inode):
+        with open(inode) as f:
+            return f.read()
+
+    def get_container_id():
+        cgroups = read_inode("/proc/self/cgroup")
+        cid_cgroups = re.search(r"/docker/([^/\n]*)", cgroups)
+        if cid_cgroups:
+            return cid_cgroups.groups()[0]
+
+        mountinfo = read_inode("/proc/self/mountinfo")
+        cid_mountinfo = re.search(r"/containers/([^/\n]*)", mountinfo)
+        if cid_mountinfo:
+            return cid_mountinfo.groups()[0]
+
+        vprint(1, f'Cgroups content: \n {cgroups}')
+        vprint(1, f'Mountinfo content: \n {mountinfo}')
+        raise Exception('Container ID could not be identified!')
+
     vprint(1, "Settings: %s" % opts)
 
     rawNetworkConfig = None
@@ -281,8 +300,7 @@ def start(**opts):
         composeConfig = yaml.full_load(open(ctx.composeFile))
 
         vprint(1, "Determining container ID")
-        cgroups = open("/proc/self/cgroup").read()
-        myCID = re.search(r"/docker/([^/\n]*)", cgroups).groups()[0]
+        myCID = get_container_id()
 
         vprint(1, "Loading container JSON config")
         myConfig = json.load(open(CONFIG_FILE_TEMPLATE % myCID))
@@ -399,4 +417,3 @@ def start(**opts):
 
 if __name__ == '__main__':
     start(**parseArgs().__dict__)
-
