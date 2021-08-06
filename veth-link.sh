@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) 2021, Viasat, Inc
+# Licensed under MPL 2.0
+
 set -e
 
 usage () {

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# Copyright (c) 2021, Viasat, Inc
+# Licensed under MPL 2.0
+
 """
 Load and start a declarative configuration.
 """

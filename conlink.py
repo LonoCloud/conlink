@@ -1,5 +1,8 @@
 #!/usr/bin/env -S python3 -u
 
+# Copyright (c) 2021, Viasat, Inc
+# Licensed under MPL 2.0
+
 import argparse, os, re, subprocess, shutil, sys, time
 from string import Template
 from cerberus import Validator

@@ -89,3 +89,11 @@ configuration setup by the `conlink` container.
 ```
 ping 8.8.8.8
 ```
+
+## Copyright & License
+
+This software is copyright Viasat and subject to the terms of the
+Mozilla Public License version 2.0 (MPL.20). A copy of the license is
+located in the LICENSE file at the top of the repository or available
+at https://mozilla.org/MPL/2.0/.
+

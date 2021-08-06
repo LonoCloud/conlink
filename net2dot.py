@@ -1,5 +1,8 @@
 #!/usr/bin/env -S python3 -u
 
+# Copyright (c) 2021, Viasat, Inc
+# Licensed under MPL 2.0
+
 import re, sys, yaml
 
 NODE_PROPS = 'shape=box style=filled penwidth=1'
