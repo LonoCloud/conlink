@@ -20,7 +20,7 @@ services:
     image: conlink
     pid: host
     network_mode: none
-    cap_add: [SYS_ADMIN, SYS_NICE, NET_ADMIN, NET_BROADCAST]
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, NET_BROADCAST, IPC_LOCK]
     security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
