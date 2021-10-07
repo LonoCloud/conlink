@@ -381,7 +381,7 @@ def start(**opts):
 
     vprint(0, "Starting openvswitch service")
     subprocess.run(["/usr/share/openvswitch/scripts/ovs-ctl",
-        "start", "--system-id=random"], check=True)
+        "start", "--system-id=random", "--no-mlockall"], check=True)
 
     # Register for docker start events for this docker-compose project
     client = docker.from_env()
