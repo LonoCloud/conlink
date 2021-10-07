@@ -16,7 +16,7 @@ except:
 import argparse
 from mininet.topo import Topo
 from mininet.net import Mininet
-from mininet.node import ( Node, OVSBridge, CPULimitedHost )
+from mininet.node import ( Node, OVSBridge, Host )
 from mininet.link import ( Link, TCIntf )
 from mininet.log import setLogLevel, info, debug
 from mininet.cli import CLI
@@ -53,7 +53,7 @@ class ConfigMininet( Mininet ):
         topo = ConfigTopo(cfg=self.cfg)
         kwargs.setdefault( 'topo', topo )
         kwargs.setdefault( 'switch', OVSBridge )
-        kwargs.setdefault( 'host', CPULimitedHost )
+        kwargs.setdefault( 'host', Host )
         kwargs.setdefault( 'link', TCLink )
         Mininet.__init__( self, *args, **kwargs)
 
