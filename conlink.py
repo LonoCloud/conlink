@@ -11,8 +11,6 @@ import docker
 import psutil
 import json, yaml
 
-CONFIG_FILE_TEMPLATE = "/var/lib/docker/containers/%s/config.v2.json"
-
 def parseArgs():
     # Parse arguments
     parser = argparse.ArgumentParser(
@@ -22,6 +20,9 @@ def parseArgs():
     parser.add_argument('--network-schema', dest="networkSchema",
             default="/usr/local/share/conlink_schema.yaml",
             help="Network configuration schema")
+    parser.add_argument('--container-template', dest="containerTemplate",
+            default="/var/lib/docker/containers/%s/config.v2.json",
+            help="Container configuration file path template")
     parser.add_argument('--network-file', dest="networkFile",
             help="Network configuration file")
     parser.add_argument('--compose-file', dest="composeFile",
@@ -251,6 +252,7 @@ def handle_container(cid, client, ctx):
     # Run commands for any fully connected containers
     run_commands(client, containerState)
 
+
 def run_commands(client, containerState):
     """
     For each container that is fully connected (all links created),
@@ -306,7 +308,7 @@ def start(**opts):
         myCID = get_container_id()
 
         vprint(1, "Loading container JSON config")
-        myConfig = json.load(open(CONFIG_FILE_TEMPLATE % myCID))
+        myConfig = json.load(open(ctx.containerTemplate % myCID))
         labels = myConfig["Config"]["Labels"]
         myName = labels['com.docker.compose.service']
         # Create a filter for containers in this docker-compose project
