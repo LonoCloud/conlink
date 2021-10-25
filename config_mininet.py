@@ -7,8 +7,9 @@
 Load and start a declarative configuration.
 """
 
-import sys, os, time
+import sys, os, time, signal
 import json
+import traceback
 try:
     import yaml
 except:
@@ -119,22 +120,30 @@ def convertToUnicode(text):
     else:
         return text
 
+def cleanup(cfg, net):
+    print("Cleaning up")
+    net.stop()
+    sys.exit(0)
 
 def run(cfg, verbose='info'):
     "Load and start a file configuration"
     setLogLevel( verbose )
     net = ConfigMininet( cfg=cfg )
-    net.start()
-    debug( '*** Net Values:\n' )
-    for node in net.values():
-        info( '%s\n' % repr( node ) )
-    debug( '*** Net Connections:\n' )
-    dumpNetConnections(net)
-    if sys.__stdin__.isatty():
-        CLI( net )
-    else:
-        while True: time.sleep(3600)
-    net.stop()
+    signal.signal(signal.SIGINT | signal.SIGTERM, lambda s, f: cleanup(cfg, net))
+    try:
+        net.start()
+        debug( '*** Net Values:\n' )
+        for node in net.values():
+            info( '%s\n' % repr( node ) )
+        debug( '*** Net Connections:\n' )
+        dumpNetConnections(net)
+        if sys.__stdin__.isatty():
+            CLI( net )
+        else:
+            while True: time.sleep(3600)
+    except BaseException as e:
+        traceback.print_exc()
+    cleanup(cfg, net)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run mininet using a configuration file')
