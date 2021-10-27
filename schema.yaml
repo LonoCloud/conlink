@@ -58,6 +58,15 @@ mininet-cfg:
           name: {type: string, required: true}
           opts: {type: dict,   required: false}
 
+    containers:
+      type: list
+      required: false
+      schema:
+        type: dict
+        schema:
+          name: {type: string, required: true}
+          opts: {type: dict,   required: false}
+
     links:
       type: list
       required: false

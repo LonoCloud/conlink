@@ -18,6 +18,9 @@ import argparse
 from mininet.topo import Topo
 from mininet.net import Mininet
 from mininet.node import ( Node, OVSBridge, Host )
+# TODO: when/if https://github.com/containers/podman/issues/12059
+#       is fixed then switch to mininet.examples.dockerhost.DockerHost
+from podmanhost import PodmanHost
 from mininet.link import ( Link, TCIntf )
 from mininet.log import setLogLevel, info, debug
 from mininet.cli import CLI
@@ -42,7 +45,10 @@ class ConfigTopo( Topo ):
             self.addSwitch(name, **opts)
         for host in cfg.get('hosts', {}):
             name, opts = host['name'], host.pop('opts', {})
-            self.addNode(name, **opts)
+            self.addHost(name, cls=Host, **opts)
+        for container in cfg.get('containers', {}):
+            name, opts = container['name'], container.pop('opts', {})
+            self.addHost(name, cls=PodmanHost, **opts)
         for link in cfg.get('links', []):
             left, right = link['left'], link.pop('right')
             opts = link.pop('opts', {})

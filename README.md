@@ -33,7 +33,7 @@ need those capabilities.
 
 ## Examples
 
-### test1
+### test1: compose file with embedded network config
 
 Start the test1 compose configuration:
 
@@ -46,7 +46,7 @@ sudo nsenter -n -t $(pgrep -f mininet:h1) ping 10.0.0.100
 ```
 
 
-### test2
+### test2: compose file with separate network config file
 
 Start the test2 compose configuration:
 
@@ -67,7 +67,7 @@ docker-compose -f examples/test2-compose.yaml exec node2 ping 8.8.8.8
 ```
 
 
-### test3
+### test3: network config file only (no compose)
 
 In terminal 1, start a container named `ZZZ_node`:
 
@@ -88,6 +88,43 @@ configuration setup by the `conlink` container.
 
 ```
 ping 8.8.8.8
+```
+
+### test4: rootless podman with network config file
+
+Pull down upstream the podman images that will be used.
+
+```
+podman pull docker.io/library/python:3-alpine
+podman pull docker.io/library/ubuntu:20.04
+```
+
+In terminal 1, start a podman container named `ZZZ_node`:
+
+```
+podman run -it --name=ZZZ_node --rm --cap-add NET_ADMIN --network none python:3-alpine sh
+```
+
+In another terminal, start the conlink container `ZZZ_network` that
+will setup a network configuration that is connected to the `ZZZ_node`
+container:
+
+```
+./examples/test4-start.sh ZZZ_network ZZZ_node
+```
+
+In terminal 1 (`ZZZ_node`), ping the `h4` podman container
+running inside the conlink podman container.
+
+```
+ping 10.0.0.100
+```
+
+From the `h1` host, issue an HTTP request to the web server running in
+the external `ZZZ_node` container.
+
+```
+sudo nsenter -n -t $(pgrep -f mininet:h1) curl 10.0.0.104:84
 ```
 
 ## Copyright & License

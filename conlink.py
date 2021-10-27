@@ -385,7 +385,19 @@ def start(**opts):
     subprocess.run(["/usr/share/openvswitch/scripts/ovs-ctl",
         "start", "--system-id=random", "--no-mlockall"], check=True)
 
+    # TODO: when/if https://github.com/containers/podman/issues/12059
+    #       is fixed then switch to using API instead of calling
+    #       podman directly
+    # vprint(0, "Starting podman service")
+    # os.makedirs("/var/run/podman", exist_ok=True)
+    # subprocess.Popen(["/usr/bin/podman", "system", "service",
+    #     "--time=0", "unix:///var/run/podman/podman.sock"],
+    #     env={"CONTAINERS_CONF": "/etc/containers/containers.conf",
+    #          "PATH": os.environ['PATH']})
+
     # Register for docker start events for this docker-compose project
+    vprint(1, "Registering for events from host docker/podman")
+    os.environ['DOCKER_HOST'] = "unix:///var/run/docker.sock"
     client = docker.from_env()
     eventIterator = client.events(
             decode=True,
@@ -412,6 +424,14 @@ def start(**opts):
         #print("event: %s" % event)
         handle_container(event['id'], client, ctx)
     vprint(0, "All container are connected")
+
+    # vprint(1, "Waiting for podman service to start")
+    # for i in range(5):
+    #     if os.path.exists("/var/run/podman/podman.sock"): break
+    #     time.sleep(1)
+    # if not os.path.exists("/var/run/podman/podman.sock"):
+    #     raise Exception("podman service did not start in 5 second")
+    # os.environ['DOCKER_HOST'] = "unix:///var/run/podman/podman.sock"
 
     vprint(0, "Starting mininet")
     vopt = {0: 'info', 1: 'info', 2: 'debug'}[ctx.verbose]
