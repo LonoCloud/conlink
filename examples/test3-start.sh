@@ -22,5 +22,5 @@ docker run --rm \
     -e NETWORK_NAME \
     -e NODE_NAME \
     ${IMAGE_NAME} \
-    /sbin/conlink.py --network-file /test/examples/test3-network.yaml
+    /sbin/conlink --network-file /test/examples/test3-network.yaml
 

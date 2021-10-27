@@ -7,8 +7,7 @@ export NODE_NAME=${1}; shift
 
 IMAGE_NAME="${IMAGE_NAME:-conlink}"
 NETWORK_FILE=${NETWORK_FILE:-/test/examples/test4-network.yaml}
-#CMD="${CMD:-/sbin/conlink.py --network-file ${NETWORK_FILE}}"
-CMD="${CMD:-/usr/local/lib/python3.8/dist-packages/config_mininet.py ${NETWORK_FILE}}"
+CMD="${CMD:-/sbin/conlink --network-file ${NETWORK_FILE}}"
 HOST_SOCK_PATH=$(pwd)/podman.sock
 
 die() { echo >&2 "${*}"; exit 1; }

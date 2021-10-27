@@ -27,7 +27,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker:/var/lib/docker
       - ./:/test
-    command: /sbin/conlink.py --compose-file /test/test1-compose.yaml
+    command: /sbin/conlink --compose-file /test/test1-compose.yaml
     x-network:
       mininet-cfg:
         switches:

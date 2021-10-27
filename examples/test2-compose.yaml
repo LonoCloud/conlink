@@ -18,7 +18,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker:/var/lib/docker
       - ./:/test
-    command: /sbin/conlink.py --compose-file /test/test2-compose.yaml --network-file /test/test2-network.yaml
+    command: /sbin/conlink --compose-file /test/test2-compose.yaml --network-file /test/test2-network.yaml
 
   node1:
     image: alpine

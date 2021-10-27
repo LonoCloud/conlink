@@ -6,47 +6,9 @@
 import argparse, os, re, subprocess, shutil, sys, time
 from string import Template
 from cerberus import Validator
-import config_mininet
 import docker
 import psutil
 import json, yaml
-
-def parseArgs():
-    # Parse arguments
-    parser = argparse.ArgumentParser(
-            description="Container data link networking")
-    parser.add_argument('--verbose', '-v', action='count', default=0,
-            help="Verbose output")
-    parser.add_argument('--network-schema', dest="networkSchema",
-            default="/usr/local/share/conlink_schema.yaml",
-            help="Network configuration schema")
-    parser.add_argument('--container-template', dest="containerTemplate",
-            default="/var/lib/docker/containers/%s/config.v2.json",
-            help="Container configuration file path template")
-    parser.add_argument('--network-file', dest="networkFile",
-            help="Network configuration file")
-    parser.add_argument('--compose-file', dest="composeFile",
-            help="Docker compose file")
-    parser.add_argument('--profile', action='append', dest="profiles",
-            default=[],
-            help="Docker compose profile(s)")
-    args = parser.parse_args()
-
-    if args.networkFile is None and args.composeFile is None:
-        parser.error("either --network-file or --compose-file is required")
-
-    envv = os.environ.get('CONLINK_VERBOSE') or os.environ.get('VERBOSE')
-    if args.verbose == 0 and envv:
-        if envv.isnumeric(): args.verbose = int(envv)
-        else: args.verbose = 1
-
-    # Allow comma and space delimited within each repeated arg
-    args.profiles = [z
-            for x in args.profiles
-            for y in x.split(' ')
-            for z in y.split(',')]
-
-    return args
 
 def envInterpolate(obj, env):
     if isinstance(obj, str):
@@ -273,6 +235,15 @@ def run_commands(client, containerState):
         cdata['commands_completed'] = True
 
 def start(**opts):
+    """
+    opts values:
+    - verbose:           verbosity level (0, 1, or 2)
+    - networkSchema:     path to conlink/config_mininet schema
+    - containerTemplate: templated path to conlink container config
+    - networkFile:       file containing network configuration/spec
+    - composeFile:       compose file containing conlink container
+    - profiles:          list of compose profiles to use
+    """
     ctx = argparse.Namespace(**opts)
 
     def vprint(v, *a):
@@ -434,11 +405,12 @@ def start(**opts):
     # os.environ['DOCKER_HOST'] = "unix:///var/run/podman/podman.sock"
 
     vprint(0, "Starting mininet")
-    vopt = {0: 'info', 1: 'info', 2: 'debug'}[ctx.verbose]
     # TODO: fix resource complaint trigged by this code:
     # https://github.com/mininet/mininet/blob/dad451bf8fc8f9d0527b4a10b875660ac30e8b8b/mininet/util.py#L512
-    config_mininet.run(networkConfig['mininet-cfg'], verbose=vopt)
+    # TODO: use secure temp file naming
+    with open("/tmp/config.yaml", 'w') as file:
+        yaml.dump(networkConfig, file)
+    cm_cmd = ["/sbin/config_mininet"]
+    if ctx.verbose >= 2: cm_cmd.append("--verbose=debug")
+    subprocess.run(cm_cmd + ["/tmp/config.yaml"])
 
-
-if __name__ == '__main__':
-    start(**parseArgs().__dict__)

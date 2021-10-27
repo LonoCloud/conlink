@@ -4,27 +4,24 @@
 # Licensed under MPL 2.0
 
 """
-Load and start a declarative configuration.
+Load and start a declarative mininet configuration.
 """
 
-import sys, os, time, signal
+import sys
 import json
 import traceback
 try:
     import yaml
 except:
     yaml = None
-import argparse
 from mininet.topo import Topo
 from mininet.net import Mininet
-from mininet.node import ( Node, OVSBridge, Host )
+from mininet.node import ( OVSBridge, Host )
 # TODO: when/if https://github.com/containers/podman/issues/12059
 #       is fixed then switch to mininet.examples.dockerhost.DockerHost
 from podmanhost import PodmanHost
 from mininet.link import ( Link, TCIntf )
-from mininet.log import setLogLevel, info, debug
-from mininet.cli import CLI
-from mininet.util import dumpNetConnections
+from mininet.log import info, debug
 
 # TCLink in mininet 2.2.2 is buggy (and doesn't pass params correctly
 # to the Link class). Provide our own based on the version at
@@ -126,40 +123,3 @@ def convertToUnicode(text):
     else:
         return text
 
-def cleanup(cfg, net):
-    print("Cleaning up")
-    net.stop()
-    sys.exit(0)
-
-def run(cfg, verbose='info'):
-    "Load and start a file configuration"
-    setLogLevel( verbose )
-    net = ConfigMininet( cfg=cfg )
-    signal.signal(signal.SIGINT | signal.SIGTERM, lambda s, f: cleanup(cfg, net))
-    try:
-        net.start()
-        debug( '*** Net Values:\n' )
-        for node in net.values():
-            info( '%s\n' % repr( node ) )
-        debug( '*** Net Connections:\n' )
-        dumpNetConnections(net)
-        if sys.__stdin__.isatty():
-            CLI( net )
-        else:
-            while True: time.sleep(3600)
-    except BaseException as e:
-        traceback.print_exc()
-    cleanup(cfg, net)
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run mininet using a configuration file')
-    parser.add_argument('--verbose', '-v',
-            nargs='?', default='info', const='debug',
-            help='set verbosity (default: debug)')
-    parser.add_argument('config',
-            help='path to configuration file')
-
-    args = parser.parse_args()
-    topConfig = loadConfig(args.config)
-    config = topConfig.get('mininet-cfg', topConfig)
-    run(config, verbose=args.verbose)
