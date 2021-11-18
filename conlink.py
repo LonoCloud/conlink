@@ -3,7 +3,7 @@
 # Copyright (c) 2021, Viasat, Inc
 # Licensed under MPL 2.0
 
-import argparse, os, re, subprocess, shutil, sys, time
+import argparse, os, re, subprocess, shlex, shutil, sys, time
 from string import Template
 from cerberus import Validator
 import docker
@@ -90,6 +90,10 @@ def mangleNetworkConfig(netCfg, containers, prefix):
             intfs.extend([l['intf'], r['intf']])
     netCfg['links'] = links
 
+    # Tunnel interfaces are always configured
+    for tunnel in netCfg.get('tunnels', []):
+        intfs.append(tunnel['intf'])
+
     # Prune/rewrite interfaces
     interfaces = []
     for interface in netCfg['mininet-cfg'].get('interfaces', []):
@@ -109,6 +113,30 @@ def mangleNetworkConfig(netCfg, containers, prefix):
 
     return netCfg
 
+def create_tunnels(tunnels, ctx):
+    for tunnel in tunnels:
+        ttype, intf = tunnel['type'], tunnel['intf']
+        vni, remote = tunnel['vni'], tunnel['remote']
+
+        mac, ip  = tunnel.get('mac'), tunnel.get('ip')
+        link_args = tunnel.get('link_args')
+        if type(link_args) == str: link_args = shlex.split(link_args)
+
+        tunCmd = ["/sbin/tun-link.sh", intf, ttype, str(vni), remote]
+        if mac:       tunCmd.extend(["--mac", mac])
+        if ip:        tunCmd.extend(["--ip",  ip])
+        if link_args: tunCmd.extend(link_args)
+
+        env = {}
+        print("Tunnel {ttype}: {intf} -> {remote}({vni})".format(**locals()))
+        if ctx.verbose >= 2:
+            print("    MAC:       {mac}" .format(mac=mac or "<AUTOMATIC>"))
+            print("    IP:        {ip}"  .format(ip=ip or '<UNSET>'))
+            print("    LINK_ARGS: {args}".format(args=link_args or '<UNSET>'))
+            env = {"VERBOSE": "1"}
+
+        # Make the tunnel interface/link
+        subprocess.run(tunCmd, check=True, env=env)
 
 def veth_span(name0, ctx):
     """
@@ -378,6 +406,10 @@ def start(**opts):
     open("/var/run/conlink.pid", 'x').write(str(os.getpid()))
 
     vprint(0, "Reached healthy state")
+
+    if 'tunnels' in networkConfig:
+        vprint(0, "Creating tunnel interfaces")
+        create_tunnels(networkConfig['tunnels'], ctx)
 
     vprint(0, "Handling already running containers")
     for c in client.containers.list(sparse=True, filters=labelFilter):

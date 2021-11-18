@@ -5,8 +5,10 @@ a declarative configuration.
 
 ## Prerequisites
 
-* `openvswitch` kernel module loaded on the host
 * docker-compose version 1.25.4 or later.
+* `openvswitch` kernel module loaded on the host
+* `geneve` (and/or `vxlan`) kernel module loaded on the host (only
+  needed for `test-geneve` example)
 
 ## Usage Notes
 
@@ -134,6 +136,47 @@ the external `ZZZ_node` container.
 ```
 sudo nsenter -n -t $(pgrep -f mininet:h1) curl 10.0.0.104:84
 ```
+
+### test5: conlink on two hosts with overlay connectivity via geneve
+
+On host 1 run conlink like this:
+
+```
+REMOTE="ADDRESS_OF_HOST_2"
+./conlink-start.sh -v --host-mode podman --network-file examples/test5-geneve.yaml -- --rm --publish 6081:6081/udp -e REMOTE=${REMOTE} -e NODE_IP=192.168.100.1
+```
+
+On host 2 run conlink like this:
+
+```
+REMOTE="ADDRESS_OF_HOST_1"
+./conlink-start.sh -v --host-mode podman --network-file examples/test5-geneve.yaml -- --rm --publish 6081:6081/udp -e REMOTE=${REMOTE} -e NODE_IP=192.168.100.2
+```
+
+On host 1, start a tcpdump on the main interface capturing Geneve
+(encapsulated) traffic:
+
+```
+sudo tcpdump -nli eth0 port 6081
+```
+
+In a different window on host 1, start tcpdump within the "node1"
+network namespace created by conlink:
+
+```
+sudo nsenter -n -t $(pgrep -f mininet:node1) tcpdump -nli eth0
+```
+
+On host 2, start a ping within the "node1" network namespace created
+by conlink:
+
+```
+sudo nsenter -n -t $(pgrep -f mininet:node1) ping 192.168.100.1
+```
+
+On host 1 you should see encapsulated ping traffic on the host and
+encapsulated pings within the "node1" namespace.
+
 
 ## Copyright & License
 

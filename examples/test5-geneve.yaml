@@ -1,0 +1,26 @@
+tunnels:
+  - type: geneve
+    intf: geth0
+    vni: 1001
+    remote: ${REMOTE}
+
+mininet-cfg:
+  switches:
+    - name: s1
+
+  hosts:
+    - name: node1
+      opts:
+        ip: ${NODE_IP}/24
+
+  interfaces:
+    - name: geth0
+      node: s1
+
+  links:
+    - left: node1
+      right: s1
+      opts:
+        intfName1: eth0
+        intfName2: node1-eth0
+

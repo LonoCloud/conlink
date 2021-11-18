@@ -24,6 +24,22 @@ links:
           mac:       {type: string, required: false,
                       regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
 
+tunnels:
+  type: list
+  schema:
+    type: dict
+    schema:
+      type:      {type: string, required: true}
+      intf:      {type: string, required: true}
+      vni:       {type: number, required: true}
+      remote:    {type: string, required: true,
+                  regex: '([0-9]+\.){3}[0-9]+'}
+      ip:        {type: string, required: false,
+                  regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
+      mac:       {type: string, required: false,
+                  regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
+      link_args: {type: string, required: false}
+
 network-settings: {type: string}
 
 commands:
