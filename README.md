@@ -15,15 +15,15 @@ a declarative configuration.
 The container to container links are created after the first process
 in the container starts executing. This means the interfaces for those
 links will not be immediately present. The container code will need to
-account for this asynchronous interface behavior. The `node` service
+account for this asynchronous interface behavior. The `node2` service
 in `examples/test2-compose.yaml` shows a simple example of a container
 command that will wait for an interface to appear before continuing
 with another command.
 
 ### System Capabilities/Permissions
 
-The conlink container will need the same level of network related
-system capabilities as the containers that it will connect to. At
+The conlink container needs to have a superset of the network related
+system capabilities of the containers that it will connect to. At
 a minimum `SYS_ADMIN` and `NET_ADMIN` are required but depending on
 what the containers require then other capabilities will also be
 required. In particular, if the container uses systemd, then it will
@@ -32,6 +32,14 @@ need those capabilities.
 
 
 ## Examples
+
+The examples below require a conlink docker image. Build the image for
+both docker and podman like this:
+
+```
+docker build -t conlink .
+podman build -t conlink .
+```
 
 ### test1: compose file with embedded network config
 
@@ -75,12 +83,12 @@ In terminal 1, start a container named `ZZZ_node`:
 docker run -it --name=ZZZ_node --rm --cap-add NET_ADMIN --network none alpine sh
 ```
 
-In another terminal, start the conlink container `ZZZ_network` that
-will setup a network configuration that is connected to the `ZZZ_node`
+In terminal 2, start the conlink container `ZZZ_network` that will
+setup a network configuration that is connected to the `ZZZ_node`
 container:
 
 ```
-./examples/test3-start.sh ZZZ_network ZZZ_node
+./conlink-start.sh -v --mode docker --host-mode docker --network-file examples/test3-network.yaml -- --name ZZZ_network --rm -e NETWORK_NAME=ZZZ_network -e NODE_NAME=ZZZ_node
 ```
 
 In terminal 1, ping the `internet` namespace within the network
@@ -105,12 +113,12 @@ In terminal 1, start a podman container named `ZZZ_node`:
 podman run -it --name=ZZZ_node --rm --cap-add NET_ADMIN --network none python:3-alpine sh
 ```
 
-In another terminal, start the conlink container `ZZZ_network` that
-will setup a network configuration that is connected to the `ZZZ_node`
+In terminal 2, start the conlink container `ZZZ_network` that will
+setup a network configuration that is connected to the `ZZZ_node`
 container:
 
 ```
-./examples/test4-start.sh ZZZ_network ZZZ_node
+./conlink-start.sh -v --host-mode podman --network-file examples/test4-network.yaml -- --name ZZZ_network --rm -e NETWORK_NAME=ZZZ_network -e NODE_NAME=ZZZ_node
 ```
 
 In terminal 1 (`ZZZ_node`), ping the `h4` podman container
