@@ -56,7 +56,7 @@ mininet-cfg:
   type: dict
   schema:
 
-    switches: 
+    switches:
       type: list
       required: false
       schema:

@@ -1,0 +1,5 @@
+podman.sock*
+*.swp
+.nfs*
+examples/*.swp
+examples/.nfs*
