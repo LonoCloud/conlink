@@ -178,6 +178,37 @@ On host 1 you should see encapsulated ping traffic on the host and
 encapsulated pings within the "node1" namespace.
 
 
+### test6: conlink on two hosts deployed with CloudFormation
+
+This test uses AWS CloudFormation to deploy two AWS EC2 instances that
+automatically install, configure, and start conlink (and dependencies)
+using the `test5-geneve.yaml` network configuration.
+
+Authenticate with AWS and set the `MY_KEY`, `MY_VPC`, and `MY_SUBNET`
+variables to refer to a preexisting key pair name, VPC ID, and Subnet
+ID respectively. Then use the AWS CLI to deploy the stack:
+
+```
+export MY_KEY=... MY_VPC=... MY_SUBNET=...
+aws --region us-west-2 cloudformation deploy --stack-name ${USER}-conlink-test6 --template-file examples/test6-cfn.yaml --parameter-overrides KeyPairName=${MY_KEY} VpcId=${MY_VPC} SubnetId=${MY_SUBNET}
+```
+
+The stack will take about 8 minutes to finish deploying. You can
+reduce the time to under a minute if you create your own AMI with the
+pre-signal steps in `BaseUserData` baked in and modify the template to
+use that instead.
+
+Once the stack is finish deploying, show the outputs of the stack
+(including instance IP addresses) like this:
+
+```
+aws --region us-west-2 cloudformation describe-stacks --stack-name ${USER}-conlink-test6 | jq '.Stacks[0].Outputs'
+```
+
+Use ssh to connect to instance 1 and 2 (as the "ubuntu" user) and then
+use nsenter to run tcpdump and ping as described for test5.
+
+
 ## Copyright & License
 
 This software is copyright Viasat and subject to the terms of the

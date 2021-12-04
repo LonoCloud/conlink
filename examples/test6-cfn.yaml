@@ -1,0 +1,180 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Launch conlink on two instances that are connected by an overlay/tunnel network
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPCId of Virtual Private Cloud (VPC).
+
+  SubnetId:
+    Description: The ID of the subnet to launch the instances into.
+    Type: AWS::EC2::Subnet::Id
+
+  KeyPairName:
+    Description: Keypair associated with the EC2 instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must provide a keypair to be associated with the EC2 instance
+
+  InstanceType:
+    Description: AWS instance type for conlink hosts
+    Type: String
+    Default: m6i.large
+
+  CidrIp:
+    Description: Allowed CIDR addresses for external access to instances
+    Type: String
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Default: '10.0.0.0/8'
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI:     "ami-00482f016b2410dc8"  # Ubuntu 21.10
+    us-west-2:
+      AMI:     "ami-0d4a468c8fcc4b5f0"  # Ubuntu 21.10
+
+
+Resources:
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: Conlink test security group
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, Description: "SSH", FromPort: 22, ToPort: 22, CidrIp: !Ref 'CidrIp'}
+      SecurityGroupEgress:
+        - {IpProtocol: '-1', Description: "All outbound", CidrIp: '0.0.0.0/0'}
+
+  SecurityGroupInternal:  # Allow full inter-group communication (Geneve)
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref SecurityGroup, IpProtocol: -1, FromPort: -1, ToPort: -1, SourceSecurityGroupId: !GetAtt SecurityGroup.GroupId }
+
+
+  BaseUserData:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value: !Sub |
+        set -x
+        # Uncomment to allow root login using KeyPairName
+        #sed -i "s/^.* ssh-rsa/ssh-rsa/" /root/.ssh/authorized_keys
+        
+        apt-get -y update
+        apt-get -y install ca-certificates curl gnupg lsb-release
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+        # podman repo
+        . /etc/os-release
+        curl -L "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_$VERSION_ID/Release.key" | apt-key add -
+        echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_$VERSION_ID/ /" | tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+
+        # docker repo
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+        # install docker and podman
+        apt-get -y update
+        apt-get -y install git podman docker-ce docker-ce-cli containerd.io
+
+        # kernel modules needed by conlink
+        modprobe openvswitch
+        modprobe geneve
+
+        ## enable and trigger systemd/dbus for ubuntu user
+        loginctl enable-linger ubuntu
+        echo "podman ps" | sudo -i -u ubuntu bash
+
+        ## Download conlink image and repo as ubuntu user
+        sudo -i -u ubuntu bash << EOF
+        podman pull lonocloud/conlink
+        git clone https://github.com/LonoCloud/conlink /home/ubuntu/conlink
+        EOF
+
+        #cfn-signal -e 0 --stack ${AWS::StackName} --region ${AWS::Region} --resource WaitHandle
+        cat > /tmp/signal << EOF
+        {
+          "Status":   "SUCCESS",
+          "Reason":   "Configuration complete",
+          "UniqueId": "$NODE_IP",
+          "Data":     "REMOTE: $REMOTE, NODE_IP: $NODE_IP"
+        }
+        EOF
+        curl -T /tmp/signal "${WaitHandle}"
+
+        ## Start conlink as ubuntu user
+        sudo -i -u ubuntu bash << EOF
+        cd /home/ubuntu/conlink
+        ./conlink-start.sh -v --host-mode podman --network-file examples/test5-geneve.yaml -- --rm --name conlink --publish 6081:6081/udp -e REMOTE=$REMOTE -e NODE_IP=$NODE_IP
+        EOF
+
+
+  Eni1:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      GroupSet: [!Ref 'SecurityGroup']
+      Description: Instance1 ENI
+      SubnetId: !Ref 'SubnetId'
+
+  Eni2:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      GroupSet: [!Ref 'SecurityGroup']
+      Description: Instance2 ENI
+      SubnetId: !Ref 'SubnetId'
+
+  UserData1:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value: !Sub |
+        #!/bin/bash
+        export REMOTE=${Eni2.PrimaryPrivateIpAddress} NODE_IP=192.168.100.1
+        ${BaseUserData.Value}
+
+  UserData2:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value: !Sub |
+        #!/bin/bash
+        export REMOTE=${Eni1.PrimaryPrivateIpAddress} NODE_IP=192.168.100.2
+        ${BaseUserData.Value}
+
+
+  Instance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      KeyName: !Ref 'KeyPairName'
+      NetworkInterfaces: [{NetworkInterfaceId: !Ref 'Eni1', DeviceIndex: '0'}]
+      UserData: {Fn::Base64: !Sub "${UserData1.Value}"}
+
+  Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      KeyName: !Ref 'KeyPairName'
+      NetworkInterfaces: [{NetworkInterfaceId: !Ref 'Eni2', DeviceIndex: '0'}]
+      UserData: {Fn::Base64: !Sub "${UserData2.Value}"}
+
+  WaitHandle:
+    Type: "AWS::CloudFormation::WaitConditionHandle"
+    Properties: {}
+  WaitConfigured:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: [Instance1, Instance2]
+    Properties:
+      Handle: !Ref WaitHandle
+      Count: 2
+      Timeout: 1200  # 20 minutes timeout
+
+
+Outputs:
+  Instance1Id: {Value: !Ref Instance1}
+  Instance2Id: {Value: !Ref Instance2}
+
+  Instance1Ip: {Value: !GetAtt Eni1.PrimaryPrivateIpAddress}
+  Instance2Ip: {Value: !GetAtt Eni2.PrimaryPrivateIpAddress}

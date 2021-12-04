@@ -1,6 +1,6 @@
 FROM ubuntu:20.04 as base
 
-RUN apt-get -y update
+RUN apt-get -y update #1
 
 RUN apt-get -y install python3-minimal
 
