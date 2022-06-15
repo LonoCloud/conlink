@@ -343,12 +343,14 @@ def start(**opts):
     if ctx.networkFile:
         vprint(0, "Loading network file %s" % ctx.networkFile)
         rawNetworkConfig = yaml.full_load(open(ctx.networkFile))
-        rawNetworkConfig = envInterpolate(rawNetworkConfig, os.environ)
 
     if not rawNetworkConfig:
         print("No network config found.")
         print("Use --network-file or x-network (in %s service)" % myService)
         sys.exit(2)
+
+    # env var interpolation like docker-compose (e.g. with defaults)
+    rawNetworkConfig = envInterpolate(rawNetworkConfig, os.environ)
 
     vprint(0, "Loading network schema file %s" % ctx.networkSchema)
     netSchema = yaml.full_load(open(ctx.networkSchema))

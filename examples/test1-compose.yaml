@@ -37,11 +37,11 @@ services:
           - name: r0
             opts: {ip: "192.168.1.1/24"}
           - name: h1
-            opts: {ip: "192.168.1.100/24", defaultRoute: "via 192.168.1.1"}
+            opts: {ip: "192.168.1.${H1_INDEX:-100}/24", defaultRoute: "via 192.168.1.1"}
           - name: h2
-            opts: {ip: "172.16.0.100/12",  defaultRoute: "via 172.16.0.1"}
+            opts: {ip: "172.16.0.${H2_INDEX:-100}/12",  defaultRoute: "via 172.16.0.1"}
           - name: h3
-            opts: {ip: "10.0.0.100/8",     defaultRoute: "via 10.0.0.1"}
+            opts: {ip: "10.0.0.${H3_INDEX:-100}/8",     defaultRoute: "via 10.0.0.1"}
         links:
           - left:  s1
             right: r0
