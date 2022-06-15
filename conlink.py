@@ -1,10 +1,10 @@
 #!/usr/bin/env -S python3 -u
 
-# Copyright (c) 2021, Viasat, Inc
+# Copyright (c) 2022, Viasat, Inc
 # Licensed under MPL 2.0
 
 import argparse, os, re, subprocess, shlex, shutil, sys, time
-from string import Template
+from compose_interpolation import TemplateWithDefaults
 from cerberus import Validator
 import docker
 import psutil
@@ -13,7 +13,7 @@ import json, yaml
 def envInterpolate(obj, env):
     if isinstance(obj, str):
 	# error on lookup failure (use safe_substitute to ignore)
-        return Template(obj).substitute(env)
+        return TemplateWithDefaults(obj).substitute(env)
     if isinstance(obj, dict):
         return {k: envInterpolate(v, env) for k, v in obj.items()}
     if isinstance(obj, list):

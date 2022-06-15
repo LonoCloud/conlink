@@ -37,6 +37,6 @@ mininet-cfg:
     - node: internet
       sync: true
       command:
-        - ip link add gdns type dummy
-        - ip link set gdns up
-        - ip addr add 8.8.8.8/24 dev gdns
+        - ip link add ${DNS_INTF:-gdns} type dummy
+        - ip link set ${DNS_INTF:-gdns} up
+        - ip addr add 8.8.8.8/24 dev ${DNS_INTF:-gdns}

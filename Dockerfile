@@ -56,7 +56,7 @@ COPY --from=build /usr/lib/python3.8/ /usr/lib/python3.8/
 COPY --from=build /usr/local/lib/python3.8/ /usr/local/lib/python3.8/
 COPY --from=build /usr/bin/mnexec /usr/bin/
 
-ADD config_mininet.py conlink.py podmanhost.py /usr/local/lib/python3.8/dist-packages/
+ADD config_mininet.py conlink.py podmanhost.py compose_interpolation.py /usr/local/lib/python3.8/dist-packages/
 ADD schema.yaml /usr/local/share/conlink_schema.yaml
 ADD conlink config_mininet veth-link.sh tun-link.sh /sbin/
 
