@@ -8,7 +8,7 @@ a declarative configuration.
 * docker-compose version 1.25.4 or later.
 * `openvswitch` kernel module loaded on the host
 * `geneve` (and/or `vxlan`) kernel module loaded on the host (only
-  needed for `test-geneve` example)
+  needed for `test5-geneve` example)
 
 ## Usage Notes
 
