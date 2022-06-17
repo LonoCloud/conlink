@@ -4,6 +4,7 @@
 # Licensed under MPL 2.0
 
 import argparse, os, re, subprocess, shlex, shutil, sys, time
+from functools import reduce
 from compose_interpolation import TemplateWithDefaults
 from cerberus import Validator
 import docker
@@ -59,6 +60,33 @@ def initContainerState(networkConfig):
             cfg[cname]['commands'].append(cmd['command'])
 
     return cfg
+
+# Simplified version of the compose merge process.
+# Enough to extract profiles, scale, and x-network properties
+# https://docs.docker.com/compose/extends/#adding-and-overriding-configuration
+def configMerge(a, b, depth=3, path=""):
+    a = a.copy()
+    for k, v in b.items():
+        npath = path + "/" + k
+        #print("path:", npath, "depth:", depth, "type(v):", type(v))
+        if not k in a:
+            a[k] = v
+        elif k == 'x-network':
+            a[k] = configMerge(a[k], b[k], depth=1, path=npath)
+        elif k == 'mininet-cfg':
+            a[k] = configMerge(a[k], b[k], depth=1, path=npath)
+        elif type(v) == list:
+            a[k] = a[k] + v
+        elif type(v) == dict:
+            if depth == 0:
+                a[k] = b[k]
+            else:
+                a[k] = configMerge(a[k], b[k], depth-1, path=npath)
+        else:
+            a[k] = v
+    return a
+def configMerge1(a, b): return configMerge(a, b, depth=1, path="")
+def configMerge3(a, b): return configMerge(a, b, depth=3, path="")
 
 def getComposeContainers(composeConfig, profiles, prefix):
     containers = []
@@ -268,9 +296,9 @@ def start(**opts):
     - verbose:           verbosity level (0, 1, or 2)
     - networkSchema:     path to conlink/config_mininet schema
     - containerTemplate: templated path to conlink container config
-    - networkFile:       file containing network configuration/spec
-    - composeFile:       compose file containing conlink container
-    - profiles:          list of compose profiles to use
+    - networkFiles:      network configuration/spec files
+    - composeFiles:      compose files (with conlink container)
+    - profiles:          compose profiles to use
     """
     ctx = argparse.Namespace(**opts)
 
@@ -298,10 +326,11 @@ def start(**opts):
 
     vprint(1, "Settings: %s" % opts)
 
-    rawNetworkConfig = None
-    if ctx.composeFile:
-        vprint(0, "Loading compose file %s" % ctx.composeFile)
-        composeConfig = yaml.full_load(open(ctx.composeFile))
+    rawNetworkConfigs = []
+    if ctx.composeFiles:
+        vprint(0, "Loading compose files: %s" % ctx.composeFiles)
+        composeConfigs = [yaml.full_load(open(f)) for f in ctx.composeFiles]
+        composeConfig = reduce(configMerge3, composeConfigs)
 
         vprint(1, "Determining container ID")
         myCID = get_container_id()
@@ -309,19 +338,19 @@ def start(**opts):
         vprint(1, "Loading container JSON config")
         myConfig = json.load(open(ctx.containerTemplate % myCID))
         labels = myConfig["Config"]["Labels"]
-        myName = labels['com.docker.compose.service']
         # Create a filter for containers in this docker-compose project
         projectName = labels["com.docker.compose.project"]
         projectWorkDir = labels["com.docker.compose.project.working_dir"]
 
-        myService = composeConfig['services'][myName]
-        if 'x-network' in myService and not ctx.networkFile:
+        if 'x-network' in composeConfig:
+            rawNetworkConfigs.append(composeConfig['x-network'])
+        for serviceData in composeConfig['services'].values():
+            if 'x-network' in serviceData:
+                rawNetworkConfigs.append(serviceData['x-network'])
+        if len(rawNetworkConfigs) > 0:
             vprint(1, "Using inline x-network config")
-            rawNetworkConfig = myService['x-network']
 
         vprint(1, "myCID:            %s" % myCID)
-        vprint(1, "myName:           %s" % myName)
-        vprint(1, "myService:        %s" % myService)
 
         containerPrefix = '/%s_' % projectName
         containerFilter = getComposeContainers(
@@ -340,16 +369,17 @@ def start(**opts):
     vprint(1, "containerFilter:  %s" % containerFilter)
     vprint(1, "labelFilter:      %s" % labelFilter)
 
-    if ctx.networkFile:
-        vprint(0, "Loading network file %s" % ctx.networkFile)
-        rawNetworkConfig = yaml.full_load(open(ctx.networkFile))
+    for networkFile in ctx.networkFiles:
+        vprint(0, "Loading network file %s" % networkFile)
+        rawNetworkConfigs.append(yaml.full_load(open(networkFile)))
 
-    if not rawNetworkConfig:
-        print("No network config found.")
-        print("Use --network-file or x-network (in %s service)" % myService)
+    if len(rawNetworkConfigs) == 0:
+        print("No network config specified.")
+        print("Use --network-file or 'x-network' in compose file")
         sys.exit(2)
 
     # env var interpolation like docker-compose (e.g. with defaults)
+    rawNetworkConfig = reduce(configMerge1, rawNetworkConfigs)
     rawNetworkConfig = envInterpolate(rawNetworkConfig, os.environ)
 
     vprint(0, "Loading network schema file %s" % ctx.networkSchema)

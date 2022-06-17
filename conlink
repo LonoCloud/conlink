@@ -1,6 +1,6 @@
 #!/usr/bin/env -S python3 -u
 
-# Copyright (c) 2021, Viasat, Inc
+# Copyright (c) 2022, Viasat, Inc
 # Licensed under MPL 2.0
 
 import argparse, os
@@ -18,16 +18,18 @@ def parseArgs():
     parser.add_argument('--container-template', dest="containerTemplate",
             default="/var/lib/docker/containers/%s/config.v2.json",
             help="Container configuration file path template")
-    parser.add_argument('--network-file', dest="networkFile",
+    parser.add_argument('--network-file', dest="networkFiles",
+            default=[], action='extend', type=lambda x: x.split(':'),
             help="Network configuration file")
-    parser.add_argument('--compose-file', dest="composeFile",
+    parser.add_argument('--compose-file', dest="composeFiles",
+            default=[], action='extend', type=lambda x: x.split(':'),
             help="Docker compose file")
-    parser.add_argument('--profile', action='append', dest="profiles",
-            default=[],
+    parser.add_argument('--profile', dest="profiles",
+            default=[], action='append',
             help="Docker compose profile(s)")
     args = parser.parse_args()
 
-    if args.networkFile is None and args.composeFile is None:
+    if args.networkFiles is [] and args.composeFiles is []:
         parser.error("either --network-file or --compose-file is required")
 
     envv = os.environ.get('CONLINK_VERBOSE') or os.environ.get('VERBOSE')

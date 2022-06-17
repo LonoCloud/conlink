@@ -3,3 +3,4 @@ podman.sock*
 .nfs*
 examples/*.swp
 examples/.nfs*
+__pycache__

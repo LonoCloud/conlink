@@ -209,6 +209,63 @@ Use ssh to connect to instance 1 and 2 (as the "ubuntu" user) and then
 use nsenter to run tcpdump and ping as described for test5.
 
 
+### test7: multiple compose files
+
+Docker-compose has the ability to specify multiple compose files that
+are merged together into a single runtime configuration. This test
+has conlink configuration spread across multiple compose files and
+a separate work config file. The network configuration appears at the
+top-level of the compose files and also within multiple compose
+service definitions.
+
+Run docker-compose using two compose files. The first defines the
+conlink/network container and a basic network configuration that
+includes a router and switch (`s0`). The second defines a single
+container (`node1`) and switch (`s1`) that is connected to the router
+defined in the first compose file.
+
+```
+COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml
+docker-compose up --build --force-recreate
+```
+
+Ping the router host from `node`:
+
+```
+docker-compose exec node1 ping 10.0.0.100
+```
+
+Restart the compose instance and add another compose file that defines
+two more containers (`node2a` and `node2b`) and a switch (`s2`) that
+is also connected to the router.
+
+```
+COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml:examples/test7-multiple/nodes2-compose.yaml
+docker-compose up --build --force-recreate
+```
+
+From `node2a`, ping `node2a` across the switches and router:
+
+```
+docker-compose exec node2a ping 10.1.0.1
+```
+
+Restart the compose instance and add another compose file that starts
+conlink using an addition network file `web-network.yaml`. The network
+file starts up a simple web server on the router.
+
+```
+COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml:examples/test7-multiple/nodes2-compose.yaml:examples/test7-multiple/all-compose.yaml
+docker-compose up --build --force-recreate
+```
+
+From `node2b`, perform a download from the web server running on the
+router host:
+
+```
+docker-compose exec node2b wget -O- 10.0.0.100
+```
+
 ## Copyright & License
 
 This software is copyright Viasat and subject to the terms of the

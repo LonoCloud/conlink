@@ -1,0 +1,50 @@
+version: "2.4"
+
+x-network:
+  mininet-cfg:
+    switches:
+      - name: s2
+    links:
+      - left:  s2
+        right: r0
+        opts:  {intfName1: 's2-r0-eth1',
+                intfName2: "eth2", params2: {ip: "10.2.0.100/24"}}
+
+services:
+  network:
+    command: /sbin/conlink --compose-file ${COMPOSE_FILE:-examples/test7-multiple/nodes2-compose.yaml}
+
+  node2a:
+    image: alpine
+    cap_add: [NET_ADMIN]
+    network_mode: none
+    command: sleep 864000
+    x-network:
+      commands:
+        - container: node2a_1
+          command: ip route add default via 10.2.0.100
+      links:
+        - left:  {container: node2a_1,  intf:        eth0,  ip: 10.2.0.1/16}
+          right: {container: network_1, intf: node2a-eth0}
+      mininet-cfg:
+        interfaces:
+          - name: node2a-eth0
+            node: s2
+
+  node2b:
+    image: alpine
+    cap_add: [NET_ADMIN]
+    network_mode: none
+    command: sleep 864000
+    x-network:
+      commands:
+        - container: node2b_1
+          command: ip route add default via 10.2.0.100
+      links:
+        - left:  {container: node2b_1,  intf:        eth0,  ip: 10.2.0.2/16}
+          right: {container: network_1, intf: node2b-eth0}
+      mininet-cfg:
+        interfaces:
+          - name: node2b-eth0
+            node: s2
+
