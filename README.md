@@ -266,6 +266,36 @@ router host:
 docker-compose exec node2b wget -O- 10.0.0.100
 ```
 
+### test8: VLAN and MTU settings
+
+This example uses the iproute2 commmands to configure network
+interface settings like MTU and VLAN tagging.
+
+Start the test8 compose configuration:
+
+```
+docker-compose -f examples/test8-compose.yaml up --build --force-recreate
+```
+
+In the network container, start a tcpdump on node1's interface
+showing ethernet frame data (including VLAN tags):
+
+```
+docker-compose -f examples/test8-compose.yaml exec network tcpdump -nlei node1-eth0
+```
+
+From `node1` ping `node2` normally:
+
+```
+docker-compose -f examples/test8-compose.yaml exec node1 ping 10.0.1.2
+```
+
+From `node2` ping `node1` over the VLAN tagged interface:
+
+```
+docker-compose -f examples/test8-compose.yaml exec node2 ping 10.100.0.1
+```
+
 ## Copyright & License
 
 This software is copyright Viasat and subject to the terms of the
