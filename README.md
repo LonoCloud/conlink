@@ -296,6 +296,43 @@ From `node2` ping `node1` over the VLAN tagged interface:
 docker-compose -f examples/test8-compose.yaml exec node2 ping 10.100.0.1
 ```
 
+### test9: Connections to ipvlan host interfaces
+
+This example has two nodes with web servers bound to local addresses.
+Each node is connected to an ipvlan interface on the host. Static NAT
+(SNAT+DNAT) is setup inside each container to map the external
+address/interface to the internal address/interface where the web
+server is running.
+
+Create an environment file with the name of the parent host interface
+and the external IP addresses to assign to each container:
+
+```
+cat << EOF > .env
+HOST_INTERFACE=enp6s0
+NODE1_HOST_ADDRESS=192.168.0.32/24
+NODE2_HOST_ADDRESS=192.168.0.33/24
+EOF
+```
+
+Start the test9 compose configuration using the environment file:
+
+```
+docker-compose --env-file .env -f examples/test9-compose.yaml up --build --force-recreate
+```
+
+Connect to the internal containers from an external host on your
+network (traffic between ipvlan interfaces on the same host is
+prevented):
+
+```
+ping -c1 192.168.0.32
+ping -c1 192.168.0.33
+curl 192.168.0.32:81
+curl 192.168.0.33:82
+```
+
+
 ## Copyright & License
 
 This software is copyright Viasat and subject to the terms of the
