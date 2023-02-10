@@ -246,7 +246,8 @@ def move_interface(name, ctx):
     cState = ctx.containerState[name]
     if cState['interfaces_completed']:
         return
-    print("move_interface interfaces:", cState['interfaces'])
+    if cState['unconnected'] > 0:
+        return
     for intf in cState['interfaces']:
         host_intf = intf['host-intf']
         intf_name = intf['intf']
