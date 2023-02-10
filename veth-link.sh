@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2021, Viasat, Inc
+# Copyright (c) 2023, Viasat, Inc
 # Licensed under MPL 2.0
 
 set -e
@@ -36,7 +36,6 @@ setup_if() {
       ${IP:+addr add ${IP} dev ${IF}}
       ${MAC:+link set dev ${IF} address ${MAC}}
       link set dev ${IF} up
-      netns del ${NS}
 EOF
 }
 
@@ -72,8 +71,9 @@ IF0=$1 IF1=$2 PID0=$3 PID1=$4
 info "Creating veth pair link (${IP0}|${MAC0} <-> ${IP1}|${MAC1})"
 
 info "Creating ip netns to pid mappings"
-ip netns attach ns${PID0} ${PID0}
-ip netns attach ns${PID1} ${PID1}
+mkdir -p /var/run/netns
+ln -sf /proc/${PID0}/ns/net /var/run/netns/ns${PID0}
+ln -sf /proc/${PID1}/ns/net /var/run/netns/ns${PID1}
 
 info "Creating veth pair with ends in each namespace"
 ip link add ${IF0} netns ns${PID0} type veth peer ${IF1} netns ns${PID1}
