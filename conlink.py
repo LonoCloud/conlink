@@ -1,6 +1,6 @@
 #!/usr/bin/env -S python3 -u
 
-# Copyright (c) 2022, Viasat, Inc
+# Copyright (c) 2023, Viasat, Inc
 # Licensed under MPL 2.0
 
 import argparse, os, re, subprocess, shlex, shutil, sys, time
@@ -226,6 +226,25 @@ def veth_span(name0, ctx):
             print("Container %s is %s connected (%s/%s links)" % (
                 cname, state, connected, unconnected+connected))
 
+def run_commands(client, containerState):
+    """
+    For each container that is fully connected (all links created),
+    run commands that are defined for that container.
+    """
+    for cname, cdata in containerState.items():
+        if cdata['commands_completed']:
+            # TODO: verbose message
+            continue
+        if cdata['unconnected'] > 0: continue
+
+        for cmd in containerState[cname]['commands']:
+            print("Running command in %s: %s" % (cname, cmd))
+            container = client.containers.get(cdata['cid'])
+            (_, outstream) = container.exec_run(cmd, stream=True)
+            for out in outstream: print(out.decode('utf-8'))
+
+        cdata['commands_completed'] = True
+
 def handle_container(cid, client, ctx):
     """
     Register the container ID and parent process PID in the
@@ -270,25 +289,6 @@ def handle_container(cid, client, ctx):
     # Run commands for any fully connected containers
     run_commands(client, containerState)
 
-
-def run_commands(client, containerState):
-    """
-    For each container that is fully connected (all links created),
-    run commands that are defined for that container.
-    """
-    for cname, cdata in containerState.items():
-        if cdata['commands_completed']:
-            # TODO: verbose message
-            continue
-        if cdata['unconnected'] > 0: continue
-
-        for cmd in containerState[cname]['commands']:
-            print("Running command in %s: %s" % (cname, cmd))
-            container = client.containers.get(cdata['cid'])
-            (_, outstream) = container.exec_run(cmd, stream=True)
-            for out in outstream: print(out.decode('utf-8'))
-
-        cdata['commands_completed'] = True
 
 def start(**opts):
     """
