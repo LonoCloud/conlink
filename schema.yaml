@@ -40,6 +40,21 @@ tunnels:
                   regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
       link_args: {type: string, required: false}
 
+interfaces:
+  type: list
+  schema:
+    type: dict
+    required: true
+    schema:
+      container: {type: string, required: true}
+      host-intf: {type: string, required: true}
+      intf:      {type: string, required: true}
+      ipvlan:    {type: boolean, required: false}
+      ip:        {type: string, required: false,
+                  regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
+      nat:       {type: string, required: false,
+                  regex: '([0-9]+\.){3}[0-9]+'}
+
 network-settings: {type: string}
 
 commands:

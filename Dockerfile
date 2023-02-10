@@ -58,5 +58,5 @@ COPY --from=build /usr/bin/mnexec /usr/bin/
 
 ADD config_mininet.py conlink.py podmanhost.py compose_interpolation.py /usr/local/lib/python3.8/dist-packages/
 ADD schema.yaml /usr/local/share/conlink_schema.yaml
-ADD conlink config_mininet veth-link.sh tun-link.sh /sbin/
+ADD conlink config_mininet veth-link.sh tun-link.sh move-intf.sh /sbin/
 

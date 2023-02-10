@@ -29,9 +29,10 @@ def initContainerState(networkConfig):
     """
     links = networkConfig['links']
     cmds = networkConfig.get('commands', [])
+    intfs = networkConfig.get('interfaces', [])
     cfg = {}
 
-    for c in [l['left'] for l in links] + [l['right'] for l in links] + cmds:
+    for c in [l['left'] for l in links] + [l['right'] for l in links] + cmds + intfs:
         # initial state
         cname = c['container']
         cfg[cname] = {
@@ -41,7 +42,9 @@ def initContainerState(networkConfig):
                 'connected': 0,
                 'unconnected': 0,
                 'commands': [],
-                'commands_completed': False}
+                'commands_completed': False,
+                'interfaces': [],
+                'interfaces_completed': False}
 
     for idx, link in enumerate(links):
         link['index'] = idx
@@ -58,6 +61,10 @@ def initContainerState(networkConfig):
             cfg[cname]['commands'].extend(cmd['command'])
         else:
             cfg[cname]['commands'].append(cmd['command'])
+
+    for intf in intfs:
+        cname = intf['container']
+        cfg[cname]['interfaces'].append(intf)
 
     return cfg
 
@@ -117,6 +124,15 @@ def mangleNetworkConfig(netCfg, containers, prefix):
             links.append(link)
             intfs.extend([l['intf'], r['intf']])
     netCfg['links'] = links
+
+    # Prune/rewrite host interfaces
+    host_intfs = []
+    for intf in netCfg.get('interfaces', []):
+        cname = prefix+intf['container']
+        if not containers or (cname in containers):
+            intf['container'] = cname
+            host_intfs.append(intf)
+    netCfg['interfaces'] = host_intfs
 
     # Tunnel interfaces are always configured
     for tunnel in netCfg.get('tunnels', []):
@@ -226,6 +242,36 @@ def veth_span(name0, ctx):
             print("Container %s is %s connected (%s/%s links)" % (
                 cname, state, connected, unconnected+connected))
 
+def move_interface(name, ctx):
+    cState = ctx.containerState[name]
+    if cState['interfaces_completed']:
+        return
+    print("move_interface interfaces:", cState['interfaces'])
+    for intf in cState['interfaces']:
+        host_intf = intf['host-intf']
+        intf_name = intf['intf']
+        pid = cState['pid']
+        ipvlan, ip, nat = intf.get('ipvlan'), intf.get('ip'), intf.get('nat')
+
+        moveCmd = ["/sbin/move-intf.sh", host_intf, intf_name, '1', str(pid)]
+        if ipvlan: moveCmd.extend(["--ipvlan"])
+        if ip:     moveCmd.extend(["--ip",  ip])
+        if nat:    moveCmd.extend(["--nat", nat])
+
+        env = {}
+        print("Interface: {host_intf} -> {name}/{intf_name}".format(**locals()))
+        if ctx.verbose >= 2:
+            print("    ipvlan:          {ipvlan}".format(ipvlan=ipvlan))
+            print("    ip:              {pid1}".format(pid1=pid1))
+            print("    nat:             {mac0}".format(mac0=mac0 or "<AUTOMATIC>"))
+            env = {"VERBOSE": "1"}
+
+        # Make the veth link
+        subprocess.run(moveCmd, check=True, env=env)
+
+    # Accounting
+    cState['interfaces_completed'] = True
+
 def run_commands(client, containerState):
     """
     For each container that is fully connected (all links created),
@@ -285,6 +331,8 @@ def handle_container(cid, client, ctx):
     containerState[cname]['pid'] = pid
 
     veth_span(cname, ctx)
+
+    move_interface(cname, ctx)
 
     # Run commands for any fully connected containers
     run_commands(client, containerState)
