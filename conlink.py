@@ -242,55 +242,51 @@ def veth_span(name0, ctx):
             print("Container %s is %s connected (%s/%s links)" % (
                 cname, state, connected, unconnected+connected))
 
-def move_interface(name, ctx):
-    cState = ctx.containerState[name]
-    if cState['interfaces_completed']:
-        return
-    if cState['unconnected'] > 0:
-        return
-    for intf in cState['interfaces']:
-        host_intf = intf['host-intf']
-        intf_name = intf['intf']
-        pid = cState['pid']
-        ipvlan, ip, nat = intf.get('ipvlan'), intf.get('ip'), intf.get('nat')
+def move_interfaces(ctx):
+    for name, cState in ctx.containerState.items():
+        if cState['interfaces_completed']: return
+        if cState['unconnected'] > 0: return
+        for intf in cState['interfaces']:
+            host_intf = intf['host-intf']
+            intf_name = intf['intf']
+            pid = cState['pid']
+            ipvlan, ip, nat = intf.get('ipvlan'), intf.get('ip'), intf.get('nat')
 
-        moveCmd = ["/sbin/move-intf.sh", host_intf, intf_name, '1', str(pid)]
-        if ipvlan: moveCmd.extend(["--ipvlan"])
-        if ip:     moveCmd.extend(["--ip",  ip])
-        if nat:    moveCmd.extend(["--nat", nat])
+            moveCmd = ["/sbin/move-intf.sh", host_intf, intf_name, '1', str(pid)]
+            if ipvlan: moveCmd.extend(["--ipvlan"])
+            if ip:     moveCmd.extend(["--ip",  ip])
+            if nat:    moveCmd.extend(["--nat", nat])
 
-        env = {}
-        print("Interface: {host_intf} -> {name}/{intf_name}".format(**locals()))
-        if ctx.verbose >= 2:
-            print("    ipvlan:          {ipvlan}".format(ipvlan=ipvlan))
-            print("    ip:              {pid1}".format(pid1=pid1))
-            print("    nat:             {mac0}".format(mac0=mac0 or "<AUTOMATIC>"))
-            env = {"VERBOSE": "1"}
+            env = {}
+            print("Interface: {host_intf} -> {name}/{intf_name}".format(**locals()))
+            if ctx.verbose >= 2:
+                print("    ipvlan:          {ipvlan}".format(ipvlan=ipvlan))
+                print("    ip:              {pid1}".format(pid1=pid1))
+                print("    nat:             {mac0}".format(mac0=mac0 or "<AUTOMATIC>"))
+                env = {"VERBOSE": "1"}
 
-        # Make the veth link
-        subprocess.run(moveCmd, check=True, env=env)
+            # Make the veth link
+            subprocess.run(moveCmd, check=True, env=env)
 
-    # Accounting
-    cState['interfaces_completed'] = True
+        # Accounting
+        cState['interfaces_completed'] = True
 
-def run_commands(client, containerState):
+def run_commands(client, ctx):
     """
     For each container that is fully connected (all links created),
     run commands that are defined for that container.
     """
-    for cname, cdata in containerState.items():
-        if cdata['commands_completed']:
-            # TODO: verbose message
-            continue
-        if cdata['unconnected'] > 0: continue
+    for cname, cState in ctx.containerState.items():
+        if cState['commands_completed']: continue
+        if cState['unconnected'] > 0: continue
 
-        for cmd in containerState[cname]['commands']:
+        for cmd in cState['commands']:
             print("Running command in %s: %s" % (cname, cmd))
-            container = client.containers.get(cdata['cid'])
+            container = client.containers.get(cState['cid'])
             (_, outstream) = container.exec_run(cmd, stream=True)
             for out in outstream: print(out.decode('utf-8'))
 
-        cdata['commands_completed'] = True
+        cState['commands_completed'] = True
 
 def handle_container(cid, client, ctx):
     """
@@ -333,10 +329,9 @@ def handle_container(cid, client, ctx):
 
     veth_span(cname, ctx)
 
-    move_interface(cname, ctx)
-
-    # Run commands for any fully connected containers
-    run_commands(client, containerState)
+    # Move interfaces and run commands for fully connected containers
+    move_interfaces(ctx)
+    run_commands(client, ctx)
 
 
 def start(**opts):
