@@ -27,6 +27,16 @@ IPTABLES() {
   ip netns exec ${ns} iptables -I "${@}"
 }
 
+WAIT_IP() {
+  local ns=${1} ip=$2
+  while true; do
+    ip netns exec ${ns} ip addr show | grep "inet ${ip}/" >/dev/null 2>&1 && return 0
+    echo "Waiting for IP ${ip}"
+    sleep 1
+  done
+}
+
+
 VERBOSE=${VERBOSE:-}
 IPVLAN= IP= TARGET=
 
@@ -74,6 +84,7 @@ ip -netns ${NS1} --force -b - <<EOF
 EOF
 
 if [ "${TARGET}" ]; then
+  WAIT_IP ${NS1} ${TARGET}
   IPTABLES ${NS1} PREROUTING  -t nat -i ${IF1} -j DNAT --to-destination ${TARGET}
   IPTABLES ${NS1} POSTROUTING -t nat -o ${IF1} -j SNAT --to-source ${IP%/*}
 fi
