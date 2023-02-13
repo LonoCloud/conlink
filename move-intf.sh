@@ -5,6 +5,7 @@
 
 set -e
 
+die() { echo "${*}"; exit 1; }
 usage () {
   echo "${0} [OPTIONS] INTF0 INTF1 PID0 PID1"
   echo ""
@@ -51,6 +52,7 @@ IF0=$1 IF1=$2 PID0=$3 PID1=$4 NS0=ns${PID0} NS1=ns${PID1}
 
 # Check arguments
 [ "${IF0}" -a "${IF1}" -a "${PID0}" -a "${PID1}" ] || usage
+[ "${TARGET}" -a -z "${IP}" ] && die "--nat requires --ip"
 
 export PATH=$PATH:/usr/sbin
 mkdir -p /var/run/netns
@@ -73,7 +75,7 @@ EOF
 
 if [ "${TARGET}" ]; then
   IPTABLES ${NS1} PREROUTING  -t nat -i ${IF1} -j DNAT --to-destination ${TARGET}
-  IPTABLES ${NS1} POSTROUTING -t nat -o ${IF1} -j SNAT --to-source ${TARGET}
+  IPTABLES ${NS1} POSTROUTING -t nat -o ${IF1} -j SNAT --to-source ${IP%/*}
 fi
 
 # /test/move-link.sh --verbose enp6s0 host 1 2500144 --ipvlan --ip 192.168.88.32/24 --nat 10.0.1.2
