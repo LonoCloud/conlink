@@ -261,8 +261,8 @@ def move_interfaces(ctx):
             print("Interface: {host_intf} -> {name}/{intf_name}".format(**locals()))
             if ctx.verbose >= 2:
                 print("    ipvlan:          {ipvlan}".format(ipvlan=ipvlan))
-                print("    ip:              {pid1}".format(pid1=pid1))
-                print("    nat:             {mac0}".format(mac0=mac0 or "<AUTOMATIC>"))
+                print("    ip:              {ip}".format(ip=ip))
+                print("    nat:             {nat}".format(nat=nat))
                 env = {"VERBOSE": "1"}
 
             # Make the veth link
