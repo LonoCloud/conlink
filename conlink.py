@@ -244,8 +244,8 @@ def veth_span(name0, ctx):
 
 def move_interfaces(ctx):
     for name, cState in ctx.containerState.items():
-        if cState['interfaces_completed']: return
-        if cState['unconnected'] > 0: return
+        if cState['interfaces_completed']: continue
+        if cState['unconnected'] > 0: continue
         for intf in cState['interfaces']:
             host_intf = intf['host-intf']
             intf_name = intf['intf']
