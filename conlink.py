@@ -250,17 +250,20 @@ def move_interfaces(ctx):
             host_intf = intf['host-intf']
             intf_name = intf['intf']
             pid = cState['pid']
-            ipvlan, ip, nat = intf.get('ipvlan'), intf.get('ip'), intf.get('nat')
+            type, mode = intf.get('type'), intf.get('mode')
+            ip, nat = intf.get('ip'), intf.get('nat')
 
             moveCmd = ["/sbin/move-intf.sh", host_intf, intf_name, '1', str(pid)]
-            if ipvlan: moveCmd.extend(["--ipvlan"])
+            if type:   moveCmd.extend(["--type", type])
+            if mode:   moveCmd.extend(["--mode", mode])
             if ip:     moveCmd.extend(["--ip",  ip])
             if nat:    moveCmd.extend(["--nat", nat])
 
             env = {}
             print("Interface: {host_intf} -> {name}/{intf_name}".format(**locals()))
             if ctx.verbose >= 2:
-                print("    ipvlan:          {ipvlan}".format(ipvlan=ipvlan))
+                print("    type:            {type}".format(type=type))
+                print("    mode:            {mode}".format(mode=mode))
                 print("    ip:              {ip}".format(ip=ip))
                 print("    nat:             {nat}".format(nat=nat))
                 env = {"VERBOSE": "1"}

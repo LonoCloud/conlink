@@ -48,9 +48,11 @@ x-network:
 
   interfaces:
     - {container: node1_1, intf: host, host-intf: "${HOST_INTERFACE}", 
-       ipvlan: true, ip: "${NODE1_HOST_ADDRESS}", nat: 10.0.1.2}
+       type: macvlan, mode: bridge,
+       ip: "${NODE1_HOST_ADDRESS}", nat: 10.0.1.2}
     - {container: node2_1, intf: host, host-intf: "${HOST_INTERFACE}",
-       ipvlan: true, ip: "${NODE2_HOST_ADDRESS}", nat: 10.0.2.2}
+       type: macvlan, mode: bridge,
+       ip: "${NODE2_HOST_ADDRESS}", nat: 10.0.2.2}
 
   # Network container mininet configuration
   # This configuration is used by config_mininet.py inside the network

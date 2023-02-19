@@ -15,9 +15,11 @@ usage () {
   echo "  PID1 is the process ID of the second namespace"
   echo ""
   echo "  Where OPTIONS are:"
-  echo "     --ipvlan       - Add ipvlan interface to INTF0 and move that instead"
+  echo "     --type TYPE    - Create sub-interface on INTF0 of type TYPE"
+  echo "                      and move that instead (macvlan, ipvlan, macvtap, ipvtap)"
+  echo "     --mode MODE    - Mode setting for macvlan, ipvlan, macvtap, ipvtap"
   echo "     --ip IP        - Add IP (CIDR) to the interface"
-  echo "     --nat TARGET   - Static NAT (DNAT+SNAT) traffic to/from TARGET"
+  echo "     --nat TARGET   - Stateless NAT traffic to/from TARGET"
   exit 2
 }
 
@@ -28,7 +30,7 @@ IPTABLES() {
 }
 
 VERBOSE=${VERBOSE:-}
-IPVLAN= IP= TARGET=
+TYPE= MODE= IP= TARGET=
 
 # Parse arguments
 positional=
@@ -36,7 +38,8 @@ while [ "${*}" ]; do
   param=$1; OPTARG=$2
   case ${param} in
   --verbose) VERBOSE=1 ;;
-  --ipvlan) IPVLAN=1 ;;
+  --type) TYPE="${OPTARG}"; shift ;;
+  --mode) MODE="${OPTARG}"; shift ;;
   --ip) IP="${OPTARG}"; shift ;;
   --nat) TARGET="${OPTARG}"; shift ;;
   -h|--help) usage ;;
@@ -59,14 +62,15 @@ mkdir -p /var/run/netns
 ln -sf /proc/${PID0}/ns/net /var/run/netns/${NS0}
 ln -sf /proc/${PID1}/ns/net /var/run/netns/${NS1}
 
-if [ "${IPVLAN}" ]; then
-  ip -netns ${NS0} -b - <<EOF
-    link add link ${IF0} name tmp$$ type ipvlan mode l2
-    link set tmp$$ netns ${NS1} name ${IF1}
-EOF
-else
+case "${TYPE}" in
+macvlan|macvtap|ipvlan)
+  ip -netns ${NS0} link add link ${IF0} name tmp$$ type ${TYPE} ${MODE:+mode ${MODE}}
+  ip -netns ${NS0} link set tmp$$ netns ${NS1} name ${IF1}
+  ;;
+*)
   ip -netns ${NS0} link set ${IF0} netns ${NS1} name ${IF1}
-fi
+  ;;
+esac
 
 ip -netns ${NS1} --force -b - <<EOF
   ${IP:+addr add ${IP} dev ${IF1}}

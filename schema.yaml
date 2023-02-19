@@ -49,7 +49,8 @@ interfaces:
       container: {type: string, required: true}
       host-intf: {type: string, required: true}
       intf:      {type: string, required: true}
-      ipvlan:    {type: boolean, required: false}
+      type:      {type: string, required: false}
+      mode:      {type: string, required: false}
       ip:        {type: string, required: false,
                   regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
       nat:       {type: string, required: false,
