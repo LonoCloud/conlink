@@ -296,10 +296,12 @@ From `node2` ping `node1` over the VLAN tagged interface:
 docker-compose -f examples/test8-compose.yaml exec node2 ping 10.100.0.1
 ```
 
-### test9: Connections to ipvlan host interfaces
+### test9: Connections to macvlan/vlan host interfaces
 
-This example has two nodes with web servers bound to local addresses.
-Each node is connected to an ipvlan interface on the host. Static NAT
+This example has three nodes with web servers bound to local addresses.
+The first two node are connected to macvlan sub-interfaces of a host
+physical interface. The third node is connected to a VLAN
+sub-interface of the same host (using VLAN ID/tag 5). Static NAT
 (SNAT+DNAT) is setup inside each container to map the external
 address/interface to the internal address/interface where the web
 server is running.
@@ -312,6 +314,7 @@ cat << EOF > .env
 HOST_INTERFACE=enp6s0
 NODE1_HOST_ADDRESS=192.168.0.32/24
 NODE2_HOST_ADDRESS=192.168.0.33/24
+NODE3_HOST_ADDRESS=192.168.5.3/24
 EOF
 ```
 
@@ -322,7 +325,7 @@ docker-compose --env-file .env -f examples/test9-compose.yaml up --build --force
 ```
 
 Connect to the internal containers from an external host on your
-network (traffic between ipvlan interfaces on the same host is
+network (traffic between macvlan interfaces on the same host is
 prevented):
 
 ```

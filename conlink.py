@@ -247,23 +247,23 @@ def move_interfaces(ctx):
         if cState['interfaces_completed']: continue
         if cState['unconnected'] > 0: continue
         for intf in cState['interfaces']:
-            host_intf = intf['host-intf']
-            intf_name = intf['intf']
-            pid = cState['pid']
-            type, mode = intf.get('type'), intf.get('mode')
+            type = intf['type']
+            host_intf, intf_name = intf['host-intf'], intf['intf']
+            mode, vlanid = intf.get('mode'), intf.get('vlanid')
             ip, nat = intf.get('ip'), intf.get('nat')
+            pid = cState['pid']
 
-            moveCmd = ["/sbin/move-intf.sh", host_intf, intf_name, '1', str(pid)]
-            if type:   moveCmd.extend(["--type", type])
+            moveCmd = ["/sbin/move-intf.sh", type, host_intf, intf_name, '1', str(pid)]
             if mode:   moveCmd.extend(["--mode", mode])
+            if vlanid: moveCmd.extend(["--vlanid", str(vlanid)])
             if ip:     moveCmd.extend(["--ip",  ip])
             if nat:    moveCmd.extend(["--nat", nat])
 
             env = {}
-            print("Interface: {host_intf} -> {name}/{intf_name}".format(**locals()))
+            print("Interface {type}: {host_intf} -> {name}/{intf_name}".format(**locals()))
             if ctx.verbose >= 2:
-                print("    type:            {type}".format(type=type))
                 print("    mode:            {mode}".format(mode=mode))
+                print("    vlanid:          {vlanid}".format(vlanid=vlanid))
                 print("    ip:              {ip}".format(ip=ip))
                 print("    nat:             {nat}".format(nat=nat))
                 env = {"VERBOSE": "1"}

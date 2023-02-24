@@ -46,15 +46,20 @@ interfaces:
     type: dict
     required: true
     schema:
+      type:      {type: string, required: true,
+                  allowed: [link, vlan, macvlan, macvtap, ipvlan, ipvtap]}
       container: {type: string, required: true}
       host-intf: {type: string, required: true}
       intf:      {type: string, required: true}
-      type:      {type: string, required: false}
-      mode:      {type: string, required: false}
+      mode:      {type: string, required: false,
+                  dependencies: {type: [macvlan, macvtap, ipvlan, ipvtap]}}
+      vlanid:    {type: number, required: false,
+                  dependencies: {type: [vlan]}}
       ip:        {type: string, required: false,
                   regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
       nat:       {type: string, required: false,
-                  regex: '([0-9]+\.){3}[0-9]+'}
+                  regex: '([0-9]+\.){3}[0-9]+',
+                  dependencies: ip}
 
 network-settings: {type: string}
 

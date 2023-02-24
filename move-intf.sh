@@ -7,19 +7,25 @@ set -e
 
 die() { echo "${*}"; exit 1; }
 usage () {
-  echo "${0} [OPTIONS] INTF0 INTF1 PID0 PID1"
+  echo "${0} [OPTIONS] TYPE INTF0 INTF1 PID0 PID1"
   echo ""
-  echo "  INTF0 is the interface in PID0 to move to PID1"
-  echo "  INTF1 is the interface in PID1 after moving"
-  echo "  PID0 is the process ID of the first namespace"
-  echo "  PID1 is the process ID of the second namespace"
+  echo "  TYPE:  one of the following values: link, vlan, macvlan,"
+  echo "         macvtap, ipvlan, or ipvtap. If TYPE is 'link'"
+  echo "         then INTF0 will be moved directly. For any other"
+  echo "         TYPE a sub-interface of TYPE will be created on"
+  echo "         INTF0 and the sub-interface virtual link will be"
+  echo "         moved instead."
+  echo "  INTF0: the interface in PID0 to move to PID1"
+  echo "  INTF1: the interface in PID1 after moving"
+  echo "  PID0:  the process ID of the first namespace"
+  echo "  PID1:  the process ID of the second namespace"
   echo ""
-  echo "  Where OPTIONS are:"
-  echo "     --type TYPE    - Create sub-interface on INTF0 of type TYPE"
-  echo "                      and move that instead (macvlan, ipvlan, macvtap, ipvtap)"
-  echo "     --mode MODE    - Mode setting for macvlan, ipvlan, macvtap, ipvtap"
-  echo "     --ip IP        - Add IP (CIDR) to the interface"
-  echo "     --nat TARGET   - Stateless NAT traffic to/from TARGET"
+  echo "  OPTIONS are:"
+  echo "     --verbose        - Verbose output (set -x)"
+  echo "     --mode MODE      - Mode setting for *vlan, *vtap TYPEs"
+  echo "     --vlanid VLANID  - VLAN ID for vlan TYPE"
+  echo "     --ip IP          - Add IP (CIDR) to the moved interface"
+  echo "     --nat TARGET     - Stateless NAT traffic to/from TARGET"
   exit 2
 }
 
@@ -38,8 +44,8 @@ while [ "${*}" ]; do
   param=$1; OPTARG=$2
   case ${param} in
   --verbose) VERBOSE=1 ;;
-  --type) TYPE="${OPTARG}"; shift ;;
   --mode) MODE="${OPTARG}"; shift ;;
+  --vlanid) VLANID="${OPTARG}"; shift ;;
   --ip) IP="${OPTARG}"; shift ;;
   --nat) TARGET="${OPTARG}"; shift ;;
   -h|--help) usage ;;
@@ -49,12 +55,12 @@ while [ "${*}" ]; do
 done
 set -- ${positional}
 
-IF0=$1 IF1=$2 PID0=$3 PID1=$4 NS0=ns${PID0} NS1=ns${PID1}
+TYPE=$1 IF0=$2 IF1=$3 PID0=$4 PID1=$5 NS0=ns${PID0} NS1=ns${PID1}
 
 [ "${VERBOSE}" ] && set -x || true
 
 # Check arguments
-[ "${IF0}" -a "${IF1}" -a "${PID0}" -a "${PID1}" ] || usage
+[ "${$#}" -lt 5 ] && usage
 [ "${TARGET}" -a -z "${IP}" ] && die "--nat requires --ip"
 
 export PATH=$PATH:/usr/sbin
@@ -63,8 +69,9 @@ ln -sf /proc/${PID0}/ns/net /var/run/netns/${NS0}
 ln -sf /proc/${PID1}/ns/net /var/run/netns/${NS1}
 
 case "${TYPE}" in
-macvlan|macvtap|ipvlan)
-  ip -netns ${NS0} link add link ${IF0} name tmp$$ type ${TYPE} ${MODE:+mode ${MODE}}
+macvlan|macvtap|ipvlan|ipvtap|vlan)
+  ip -netns ${NS0} link add link ${IF0} name tmp$$ type ${TYPE} \
+    ${MODE:+mode ${MODE}} ${VLANID:+id ${VLANID}}
   ip -netns ${NS0} link set tmp$$ netns ${NS1} name ${IF1}
   ;;
 *)
@@ -82,4 +89,4 @@ if [ "${TARGET}" ]; then
   IPTABLES ${NS1} POSTROUTING -t nat -o ${IF1} -j SNAT --to-source ${IP%/*}
 fi
 
-# /test/move-link.sh --verbose enp6s0 host 1 2500144 --ipvlan --ip 192.168.88.32/24 --nat 10.0.1.2
+# /test/move-link.sh --verbose ipvlan enp6s0 host 1 2500144 --ip 192.168.88.32/24 --nat 10.0.1.2

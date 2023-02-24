@@ -21,6 +21,7 @@ services:
       - HOST_INTERFACE=${HOST_INTERFACE:?HOST_INTERFACE must be set}
       - NODE1_HOST_ADDRESS=${NODE1_HOST_ADDRESS:?NODE1_HOST_ADDRESS must be set}
       - NODE2_HOST_ADDRESS=${NODE2_HOST_ADDRESS:?NODE2_HOST_ADDRESS must be set}
+      - NODE3_HOST_ADDRESS=${NODE3_HOST_ADDRESS:?NODE3_HOST_ADDRESS must be set}
     command: /sbin/conlink --compose-file /test/test9-compose.yaml
 
   node1:
@@ -37,22 +38,31 @@ services:
     command: sh -c 'while ! ip link show eth0 up; do sleep 1; done;
                     python3 -m http.server --bind 10.0.2.2 82'
 
+  node3:
+    image: python:3-alpine
+    cap_add: [NET_ADMIN]
+    networks: []
+    command: sh -c 'while ! ip link show eth0 up; do sleep 1; done;
+                    python3 -m http.server --bind 10.0.3.2 83'
+
 x-network:
   # "Physical" network interface definitions.
   # This defines container to container links.
   links:
     - left:  {container: node1_1,   intf:       eth0,  ip: 10.0.1.2/16}
-      right: {container: network_1, intf: node1-eth0} #,  ip: 10.0.1.1/16}
+      right: {container: network_1, intf: node1-eth0}
     - left:  {container: node2_1,   intf:       eth0,  ip: 10.0.2.2/16}
-      right: {container: network_1, intf: node2-eth0} #,  ip: 10.0.2.1/16}
+      right: {container: network_1, intf: node2-eth0}
+    - left:  {container: node3_1,   intf:       eth0,  ip: 10.0.3.2/16}
+      right: {container: network_1, intf: node3-eth0}
 
   interfaces:
-    - {container: node1_1, intf: host, host-intf: "${HOST_INTERFACE}", 
-       type: macvlan, mode: bridge,
-       ip: "${NODE1_HOST_ADDRESS}", nat: 10.0.1.2}
+    - {container: node1_1, intf: host, host-intf: "${HOST_INTERFACE}",
+       type: macvlan, mode: bridge, ip: "${NODE1_HOST_ADDRESS}", nat: 10.0.1.2}
     - {container: node2_1, intf: host, host-intf: "${HOST_INTERFACE}",
-       type: macvlan, mode: bridge,
-       ip: "${NODE2_HOST_ADDRESS}", nat: 10.0.2.2}
+       type: macvlan, mode: bridge, ip: "${NODE2_HOST_ADDRESS}", nat: 10.0.2.2}
+    - {container: node3_1, intf: host, host-intf: "${HOST_INTERFACE}",
+       type: vlan,    vlanid: 5,    ip: "${NODE3_HOST_ADDRESS}", nat: 10.0.3.2}
 
   # Network container mininet configuration
   # This configuration is used by config_mininet.py inside the network
@@ -60,9 +70,11 @@ x-network:
   # etc).
   mininet-cfg:
     switches:
-      - name: s1   # the switch between node1, node2, and internet
+      - name: s1   # the switch between node1, node2, and node3
     interfaces:
       - name: node1-eth0
         node: s1
       - name: node2-eth0
+        node: s1
+      - name: node3-eth0
         node: s1
