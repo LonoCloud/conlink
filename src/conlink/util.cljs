@@ -82,7 +82,6 @@
           (.on stderr "data" #(swap! res update :stderr conj %)))))))
 
 (def read-file (promisify fs/readFile))
-
 (def write-file (promisify fs/writeFile))
 
 (defn load-config [file]
