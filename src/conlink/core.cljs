@@ -34,15 +34,12 @@ Options:
                                     [default: /var/run/docker.sock]
   --podman-socket PATH              Podman socket to listen to
                                     [default: /var/run/podman/podman.sock]
-  --work-queue-interval MS          Check work queue every MS milliseconds
-                                    [default: 100]
 ")
 
 (def OVS-CMD ["/usr/share/openvswitch/scripts/ovs-ctl"
               "start" "--system-id=random", "--no-mlockall"])
 
 (def ctx (atom {}))
-(def work-queue (array))
 
 (defn json-str [obj]
   (js/JSON.stringify (->js obj)))
@@ -132,7 +129,11 @@ Options:
                  (fatal 1 (str "OVS startup exited with " code)))))
       nc)))
 
-(defn veth-create [opts link my-pid container-pid]
+
+(defn indent [s pre]
+  (S/replace s #"(^|[\n])" (str "$1" pre)))
+
+(defn veth-create [{:keys [verbose]} link my-pid container-pid]
   (let [{:keys [interface outer-interface domain]} link
         status-path [:network-state :links outer-interface :status]
         link-status (get-in @ctx status-path)]
@@ -146,10 +147,23 @@ Options:
          br-cmd (str "brctl addif " domain " " outer-interface)
 
          _ (swap! ctx assoc-in status-path :created)
+         _ (when verbose (Eprintln (str "Running (" outer-interface "): "
+                                        veth-cmd)))
          vres (P/catch (spawn veth-cmd) #(identity %))
-         _ (prn :veth-cmd veth-cmd :res vres)
+         _ (if (= 0 (:code vres))
+             (when verbose (Eprintln (str "Result (" outer-interface "):\n"
+                                          (indent (:stdout vres) "  "))))
+             (Eprintln (str "Error [" (:code vres) " ( " outer-interface "):\n"
+                            (indent (:stderr vres) "  "))))
+
+         _ (when verbose (Eprintln (str "Running (" outer-interface "): "
+                                        br-cmd)))
          bres (P/catch (spawn br-cmd) #(identity %))
-         _ (prn :br-cmd br-cmd :res bres)]
+         _ (if (= 0 (:code bres))
+             (when verbose (Eprintln (str "Result (" outer-interface "):\n"
+                                          (indent (:stdout bres) "  "))))
+             (Eprintln (str "Error [" (:code bres) " ( " outer-interface "):\n"
+                            (indent (:stderr bres) "  "))))]
         vres))))
 
 (defn veth-del [opts link]
@@ -162,13 +176,14 @@ Options:
            (swap! ctx assoc-in status-path nil)
            %))))
 
-(defn handle-event [{:as opts :keys [verbose]} event]
-  (let [{:keys [status id container]} event
-        Name (.-Name ^obj container)
-        Pid (.-Pid ^obj (.-State ^obj container))
-        cname (->> Name (re-seq #"(.*/)?(.*)") first last)
-        {:keys [network-state my-pid]} @ctx
-        links (get-in network-state [:containers cname :links])]
+(defn handle-event [{:as opts :keys [verbose]} client event]
+  (P/let [{:keys [status id]} event
+          container ^obj (.inspect ^obj (.getContainer client id))
+          Name (.-Name ^obj container)
+          Pid (.-Pid ^obj (.-State ^obj container))
+          cname (->> Name (re-seq #"(.*/)?(.*)") first last)
+          {:keys [network-state my-pid]} @ctx
+          links (get-in network-state [:containers cname :links])]
     (if (not (seq links))
       (Eprintln (str "Event: no links defined for " cname ", ignoring"))
       (do
@@ -177,13 +192,6 @@ Options:
                  (if (= status "start")
                    (veth-create opts link my-pid Pid)
                    (veth-del opts link))))))))
-
-(defn process-work-queue [{:as opts :keys [verbose]}]
-  (let [q-count (.-length work-queue)]
-    (when (> q-count 0)
-      (when verbose (Eprintln (str "Queued events:" q-count)))
-      (let [event (.shift work-queue)]
-        (handle-event opts event)))))
 
 (defn inner-exit-handler [opts err origin]
   (let [{:keys [network-state]} @ctx
@@ -205,17 +213,14 @@ Options:
                    (spawn (str "brctl delbr " domain))))))
       (js/process.exit 127))))
 
-(defn inner [{:as opts :keys [verbose bridge-mode work-queue-interval]}]
+(defn inner [{:as opts :keys [verbose bridge-mode]}]
   (P/let
     [net-cfg (load-network-config (first (:network-file opts)))
      net-state (gen-network-state net-cfg)
-     event-handler (fn [client {:keys [id] :as ev}]
-                     (P/let [c ^obj (.inspect ^obj (.getContainer client id))]
-                       (.push work-queue (assoc ev :container c))))
      docker (container-client (:docker-socket opts) {"event" ["start" "die"]}
-                              event-handler)
+                              (partial handle-event opts))
      podman (container-client (:podman-socket opts) {"event" ["start" "die"]}
-                              event-handler)]
+                              (partial handle-event opts))]
     (when (and (not docker) (not podman))
       (fatal 1 "Failed to start either docker or podman client/listener"))
     (swap! ctx assoc
@@ -241,12 +246,12 @@ Options:
       (P/all (for [client [docker podman]]
                (P/let [containers ^obj (.listContainers client)]
                  (P/all (for [container containers]
-                          (event-handler client {:status "start"
-                                                 :from "pre-existing"
-                                                 :id (.-Id ^obj container)}))))))
+                          (handle-event opts client {:status "start"
+                                                     :from "pre-existing"
+                                                     :id (.-Id ^obj container)}))))))
 
-      (js/setInterval #(process-work-queue opts) work-queue-interval)
-      (Epprint (dissoc @ctx :network-container :docker :podman)))))
+      #_(Epprint (dissoc @ctx :network-container :docker :podman))
+      true)))
 
 (defn outer-exit-handler [err origin]
   (let [{:keys [network-container network-state]} @ctx
@@ -265,10 +270,11 @@ Options:
           net-cnt ^obj (.inspect net-cnt-obj)
           opts (merge opts {:network-container net-cnt-obj
                             :network-pid (-> net-cnt :State :Pid)})]
-    opts))
+    true))
 
 (defn show [opts]
-  (prn :show-command))
+  (prn :show-command)
+  true)
 
 (def COMMANDS {"inner" inner
                "outer" outer
@@ -279,8 +285,7 @@ Options:
     [{:as opts :keys [command verbose]} (parse-opts usage args)
      _ (when (empty? opts)
          (fatal 2 "either --network-file or --compose-file is required"))
-     command-fn (get COMMANDS command)
-     opts (update opts :work-queue-interval js/parseInt)]
+     command-fn (get COMMANDS command)]
 
     (when (not command-fn) (fatal 2 (str "Invalid command: " command)))
     (when verbose (Eprintln "User options:") (Epprint opts))
