@@ -30,11 +30,12 @@ die () { warn "ERROR: ${*}"; exit 1; }
 
 # Set MAC, IP, and up state for interface within netns
 setup_if() {
-  local IF=$1 NS=$2 MAC=$3 IP=$4
+  local IF=$1 NS=$2 MAC=$3 IP=$4 MTU=$5
 
   ip -netns ${NS} --force -b - <<EOF
       ${IP:+addr add ${IP} dev ${IF}}
       ${MAC:+link set dev ${IF} address ${MAC}}
+      ${MTU:+link set dev ${IF} mtu ${MTU}}
       link set dev ${IF} up
 EOF
 }
@@ -49,6 +50,7 @@ while [ "${*}" ]; do
   --ip1) IP1="${OPTARG}"; shift ;;
   --mac0) MAC0="${OPTARG}"; shift ;;
   --mac1) MAC1="${OPTARG}"; shift ;;
+  --mtu) MTU="${OPTARG}"; shift ;;
   -h|--help) usage ;;
   *) positional="${positional} $1" ;;
   esac
@@ -79,7 +81,7 @@ info "Creating veth pair with ends in each namespace"
 ip link add ${IF0} netns ns${PID0} type veth peer ${IF1} netns ns${PID1}
 
 info "Setting MAC, IP, and up state"
-setup_if ${IF0} ns${PID0} "${MAC0}" "${IP0}"
-setup_if ${IF1} ns${PID1} "${MAC1}" "${IP1}"
+setup_if ${IF0} ns${PID0} "${MAC0}" "${IP0}" "${MTU}"
+setup_if ${IF1} ns${PID1} "${MAC1}" "${IP1}" "${MTU}"
 
 info "Created veth pair link (${IP0}|${MAC0} <-> ${IP1}|${MAC1})"
