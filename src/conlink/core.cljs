@@ -64,15 +64,20 @@ Options:
                 (swap! attempt inc) ;; Fix when P/loop supports values
                 (P/recur))))))))))
 
-(defn network-state [net-cfg]
-  (reduce (fn [c {:as l :keys [container domain interface]}]
-            (prn :l l)
+(defn load-network-config [path]
+  (P/let [net-cfg (load-config path)]
+    (let [links (for [{:as link :keys [container interface]} (:links net-cfg)]
+                  (merge link {:outer-interface (str container "-" interface)}))]
+      (assoc net-cfg :links links))))
+
+(defn gen-network-state [net-cfg]
+  (reduce (fn [c {:as l :keys [outer-interface container domain]}]
             (-> c
-                (assoc-in [:containers container :status] nil)
                 (update-in [:containers container :links] (fnil conj []) l)
-                (assoc-in [:domains domain :status] nil)
-                (update-in [:domains domain :links] (fnil conj []) l)))
-          net-cfg (:links net-cfg)))
+                (assoc-in [:links outer-interface] (assoc l :status nil))
+                (assoc-in [:containers container :status] nil)
+                (assoc-in [:domains domain :status] nil)))
+          {} (:links net-cfg)))
 
 (defn check-no-domain [opts domain]
   (P/let [check-cmd (str "brctl show " domain)
@@ -80,6 +85,7 @@ Options:
     (if (= 1 (:code res))
       true
       (if (= 0 (:code res))
+        ;; TODO: maybe mark as :exists and use without cleanup
         (fatal 1 (str "Domain " domain " already exists"))
         (fatal 1 (str "Unable to run '" check-cmd "': " (:stderr res)))))))
 
@@ -126,17 +132,51 @@ Options:
                  (fatal 1 (str "OVS startup exited with " code)))))
       nc)))
 
+(defn veth-create [opts link my-pid container-pid]
+  (let [{:keys [interface outer-interface domain]} link
+        status-path [:network-state :links outer-interface :status]
+        link-status (get-in @ctx status-path)]
+    (if link-status
+      (Eprintln (str "Link " outer-interface " already exists, ignoring"))
+      (P/let
+        [veth-cmd (str "./veth-link.sh"
+                       " " "--mtu 9000"
+                       " " interface " " outer-interface
+                       " " container-pid " " my-pid)
+         br-cmd (str "brctl addif " domain " " outer-interface)
+
+         _ (swap! ctx assoc-in status-path :created)
+         vres (P/catch (spawn veth-cmd) #(identity %))
+         _ (prn :veth-cmd veth-cmd :res vres)
+         bres (P/catch (spawn br-cmd) #(identity %))
+         _ (prn :br-cmd br-cmd :res bres)]
+        vres))))
+
+(defn veth-del [opts link]
+  (let [{:keys [interface outer-interface domain]} link
+        status-path [:network-state :links outer-interface :status]]
+    (P/catch
+      (spawn (str "ip link del " outer-interface))
+      #(do (Eprintln (str "Could not delete " outer-interface
+                          ": " (:stderr %)))
+           (swap! ctx assoc-in status-path nil)
+           %))))
+
 (defn handle-event [{:as opts :keys [verbose]} event]
   (let [{:keys [status id container]} event
         Name (.-Name ^obj container)
+        Pid (.-Pid ^obj (.-State ^obj container))
         cname (->> Name (re-seq #"(.*/)?(.*)") first last)
-        link (get-in opts [:container cname])
-        domain (get-in opts [:domain (:domain link)])]
-    (if link
-      (when verbose (Eprintln "Event:" status cname id link domain))
-      (Eprintln (str "Event: no links defined for " cname ", ignoring")))
-
-    #_(prn :handling-event event)))
+        {:keys [network-state my-pid]} @ctx
+        links (get-in network-state [:containers cname :links])]
+    (if (not (seq links))
+      (Eprintln (str "Event: no links defined for " cname ", ignoring"))
+      (do
+        (when verbose (Eprintln "Event:" status cname id))
+        (P/all (for [link links]
+                 (if (= status "start")
+                   (veth-create opts link my-pid Pid)
+                   (veth-del opts link))))))))
 
 (defn process-work-queue [{:as opts :keys [verbose]}]
   (let [q-count (.-length work-queue)]
@@ -145,16 +185,21 @@ Options:
       (let [event (.shift work-queue)]
         (handle-event opts event)))))
 
-(defn inner-exit-handler [err origin]
-  (let [{:keys [network-container network-state]} @ctx
-        _ (prn :exit :domains (:domains network-state))
-        domains (keys (filter #(-> % val :status)
-                              (:domains network-state)))]
-    (prn :exit :domains domains)
+(defn inner-exit-handler [opts err origin]
+  (let [{:keys [network-state]} @ctx
+        {:keys [links domains containers]} network-state
+        ;; filter for :created status (ignore :exists)
+        outer-links (keys (filter #(= :created (-> % val :status)) links))
+        domain-names (keys (filter #(= :created (-> % val :status)) domains))]
     (Eprintln (str "Got " origin ":") err)
     (P/do
-      (when (seq domains)
-        (P/all (for [domain domains]
+      (when (seq outer-links)
+        (P/all (for [olink outer-links]
+                 (P/do
+                   (Eprintln (str "Removing link " olink))
+                   (veth-del opts (get-in network-state [:links olink]))))))
+      (when (seq domain-names)
+        (P/all (for [domain domain-names]
                  (P/do
                    (Eprintln (str "Removing domain/switch " domain))
                    (spawn (str "brctl delbr " domain))))))
@@ -162,8 +207,8 @@ Options:
 
 (defn inner [{:as opts :keys [verbose bridge-mode work-queue-interval]}]
   (P/let
-    [net-cfg (load-config (first (:network-file opts)))
-     net-state (network-state net-cfg)
+    [net-cfg (load-network-config (first (:network-file opts)))
+     net-state (gen-network-state net-cfg)
      event-handler (fn [client {:keys [id] :as ev}]
                      (P/let [c ^obj (.inspect ^obj (.getContainer client id))]
                        (.push work-queue (assoc ev :container c))))
@@ -174,12 +219,13 @@ Options:
     (when (and (not docker) (not podman))
       (fatal 1 "Failed to start either docker or podman client/listener"))
     (swap! ctx assoc
+           :my-pid js/process.pid
            :docker docker
            :podman podman
            :network-config net-cfg
            :network-state net-state)
-    (js/process.on "SIGINT" #(inner-exit-handler % "signal"))
-    (js/process.on "uncaughtException" inner-exit-handler)
+    (js/process.on "SIGINT" #(inner-exit-handler opts % "signal"))
+    (js/process.on "uncaughtException" #(inner-exit-handler opts %1 %2))
 
     (when (= "ovs" bridge-mode)
       true #_(P/let [res (spawn )]))
@@ -200,7 +246,7 @@ Options:
                                                  :id (.-Id ^obj container)}))))))
 
       (js/setInterval #(process-work-queue opts) work-queue-interval)
-      (Epprint (dissoc @ctx :network-container)))))
+      (Epprint (dissoc @ctx :network-container :docker :podman)))))
 
 (defn outer-exit-handler [err origin]
   (let [{:keys [network-container network-state]} @ctx
