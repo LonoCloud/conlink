@@ -22,7 +22,9 @@ RUN cd /app && \
 FROM node:16-slim as run
 
 RUN apt-get -y update
-RUN apt-get -y install libpcap-dev tcpdump iproute2 iputils-ping curl
+# Runtime deps and utilities
+RUN apt-get -y install libpcap-dev tcpdump iproute2 iputils-ping curl \
+                       openvswitch-switch openvswitch-testcontroller
 
 COPY --from=build /app/ /app/
 
