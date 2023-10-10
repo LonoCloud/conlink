@@ -27,5 +27,6 @@ RUN apt-get -y install libpcap-dev tcpdump iproute2 iputils-ping curl \
                        openvswitch-switch openvswitch-testcontroller
 
 COPY --from=build /app/ /app/
+ADD veth-link.sh /app/
 
 WORKDIR /app
