@@ -6,18 +6,18 @@
 set -e
 
 usage () {
-    echo "${0} [OPTIONS] INTF0 INTF1 PID0 PID1"
-    echo ""
-    echo "  INTF0 is the name of first veth interface"
-    echo "  INTF1 is the name of second veth interface name"
-    echo "  PID0 is the process ID of the first container"
-    echo "  PID1 is the process ID of the second container"
-    echo ""
-    echo "  Where OPTIONS are:"
-    echo "     --ip0 IP0    - IP address"
-    echo "     --ip1 IP1    - IP address"
-    echo "     --mac0 MAC0  - MAC address"
-    echo "     --mac1 MAC1  - MAC address"
+    echo >&2 "${0} [OPTIONS] INTF0 INTF1 PID0 PID1"
+    echo >&2 ""
+    echo >&2 "  INTF0 is the name of first veth interface"
+    echo >&2 "  INTF1 is the name of second veth interface name"
+    echo >&2 "  PID0 is the process ID of the first container"
+    echo >&2 "  PID1 is the process ID of the second container"
+    echo >&2 ""
+    echo >&2 "  Where OPTIONS are:"
+    echo >&2 "     --ip0 IP0    - IP address"
+    echo >&2 "     --ip1 IP1    - IP address"
+    echo >&2 "     --mac0 MAC0  - MAC address"
+    echo >&2 "     --mac1 MAC1  - MAC address"
     exit 2
 }
 
