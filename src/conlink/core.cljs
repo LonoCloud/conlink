@@ -4,8 +4,8 @@
   (:require [clojure.string :as S]
             [promesa.core :as P]
             [cljs-bean.core :refer [->clj ->js]]
-            [conlink.util :refer [parse-opts Eprn Eprintln Epprint
-                                  fatal spawn exec load-config]]
+            [conlink.util :refer [parse-opts Eprintln Epprint
+                                  fatal spawn read-file load-config]]
             #_["dockerode$default" :as Docker]))
 
 ;; TODO: use require syntax when shadow-cljs works with "*$default"
@@ -39,31 +39,35 @@ Options:
                                     [default: /var/run/podman/podman.sock]
 ")
 
-(def OVS-START-CMD "/usr/share/openvswitch/scripts/ovs-ctl start --system-id=random --no-mlockall")
+(def OVS-START-CMD "/usr/share/openvswitch/scripts/ovs-ctl start --system-id=random --no-mlockall --delete-bridges")
 
 (def ctx (atom {}))
 
 (defn json-str [obj]
   (js/JSON.stringify (->js obj)))
 
+(def conjv (fnil conj []))
+
 (defn indent [s pre]
   (-> s
       (S/replace #"[\n]*$" "")
       (S/replace #"(^|[\n])" (str "$1" pre))))
 
-(defn load-network-config [path]
-  (P/let [net-cfg (load-config path)]
-    (let [links (for [{:as link :keys [container interface]} (:links net-cfg)]
-                  (merge link {:outer-interface (str container "-" interface)}))]
-      (assoc net-cfg :links links))))
+(defn enrich-network-config [cfg]
+  (let [links (for [{:as link :keys [container service interface]} (:links cfg)
+                    ;; TODO: do something more sane here
+                    :let [oif (str (or container service) "-" interface)]]
+                (merge link {:outer-interface oif}))]
+    (assoc cfg :links links)))
 
 (defn gen-network-state [net-cfg]
-  (reduce (fn [c {:as l :keys [outer-interface container domain]}]
-            (-> c
-                (update-in [:containers container :links] (fnil conj []) l)
-                (assoc-in [:links outer-interface] (assoc l :status nil))
-                (assoc-in [:containers container :status] nil)
-                (assoc-in [:domains domain :status] nil)))
+  (reduce (fn [c {:as l :keys [outer-interface service container domain]}]
+            (assert domain (str "No domain specified for link:" outer-interface))
+            (cond-> c
+                true (assoc-in [:links outer-interface] (assoc l :status nil))
+                true (assoc-in [:domains domain :status] nil)
+                container (update-in [:containers container :links] conjv l)
+                service   (update-in [:services service :links] conjv l)))
           {} (:links net-cfg)))
 
 
@@ -82,7 +86,7 @@ Options:
             (if (and attempts (> @attempt  attempts))
               (timeout-fn)
               (P/do
-                (P/delay 100)
+                (P/delay sleep-ms)
                 (swap! attempt inc) ;; Fix when P/loop supports values
                 (P/recur))))))))))
 
@@ -189,27 +193,54 @@ Options:
           res))))
 
 
+;;; docker/docker-compose utilities
+
+(defn get-container-id
+  "Returns nil if no container ID can be determined (e.g. we are not
+  running in a container)"
+  []
+  (P/let [[cgroup mountinfo]
+          , (P/all [(read-file "/proc/self/cgroup" "utf8")
+                    (read-file "/proc/self/mountinfo" "utf8")])
+          cgroups (map second (re-seq #"/docker/([^/\n]*)" cgroup))
+          containers (map second (re-seq #"/containers/([^/\n]*)" mountinfo))]
+    (first (concat cgroups containers))))
+
+(defn get-container
+  [client cid]
+  (P/-> ^obj (.inspect ^obj (.getContainer client cid)) ->clj))
+
 ;;;
 
-(defn docker-client [{:keys [error log]} path filters event-callback]
+(defn docker-client [{:keys [error log]} path]
   (P/catch
     (P/let
       [client (Docker. #js {:socketPath path})
-       ev-stream ^obj (.getEvents client #js {:filters (json-str filters)})
-       _ ^obj (.on ev-stream "data"
-                   #(event-callback client (->clj (js/JSON.parse %))))]
+       ;; client is lazy so trigger it now
+       containers ^obj (.listContainers client)]
       (log (str "Listening on " path))
       client)
-    #(error "Could not start docker client/listener on" path)))
+    #(error "Could not start docker client on '" path "': " %)))
 
-(defn handle-event [{:as opts :keys [info log]} client event]
-  (P/let [{:keys [status id]} event
-          container ^obj (.inspect ^obj (.getContainer client id))
-          Name (.-Name ^obj container)
-          Pid (.-Pid ^obj (.-State ^obj container))
-          cname (->> Name (re-seq #"(.*/)?(.*)") first last)
-          {:keys [network-state my-pid]} @ctx
-          links (get-in network-state [:containers cname :links])]
+(defn docker-listen [{:keys [error log]} client filters event-callback]
+  (P/catch
+    (P/let
+      [ev-stream ^obj (.getEvents client #js {:filters (json-str filters)})
+       _ ^obj (.on ev-stream "data"
+                   #(event-callback client (->clj (js/JSON.parse %))))]
+      ev-stream)
+    #(error "Could not start docker listener")))
+
+
+(defn handle-event [{:as opts :keys [info log]} client {:keys [status id]}]
+  (P/let [{:keys [network-state self-pid]} @ctx
+          container (get-container client id)
+          cname (->> (:Name container) (re-seq #"(.*/)?(.*)") first last)
+          sname (-> container :Config :Labels :com.docker.compose.service)
+          Pid (-> container :State :Pid)
+          clinks (get-in network-state [:containers cname :links])
+          slinks (get-in network-state [:services sname :links])
+          links (concat clinks slinks)]
     (if (not (seq links))
       (info (str "Event: no links defined for " cname ", ignoring"))
       (do
@@ -219,9 +250,12 @@ Options:
                    (P/do
                      (log (str "Creating link (in " domain ") "
                                outer-interface " -> " cname ":" interface))
-                     (link-create opts link Pid my-pid)
+                     (link-create opts link Pid self-pid)
                      (domain-add-link opts domain outer-interface))
-                   (link-del opts outer-interface))))))))
+                   (P/do
+                     (log (str "Deleting link (in " domain ") "
+                               outer-interface " -> " cname ":" interface))
+                     (link-del opts outer-interface)))))))))
 
 (defn inner-exit-handler [{:as opts :keys [log info]} err origin]
   (let [{:keys [network-state]} @ctx
@@ -243,28 +277,41 @@ Options:
                    (domain-del opts domain)))))
       (js/process.exit 127))))
 
-(defn inner [{:as opts :keys [bridge-mode]}]
+(defn inner [{:as opts :keys [info bridge-mode]}]
   (P/let
-    [net-cfg (load-network-config (first (:network-file opts)))
+    [net-cfg (P/-> (load-config (first (:network-file opts)))
+                   enrich-network-config)
      net-state (gen-network-state net-cfg)
-     docker (docker-client opts (:docker-socket opts) {"event" ["start" "die"]}
-                           (partial handle-event opts))
-     podman (docker-client opts (:podman-socket opts) {"event" ["start" "die"]}
-                           (partial handle-event opts))]
-    (when (and (not docker) (not podman))
-      (fatal 1 "Failed to start either docker or podman client/listener"))
-    (swap! ctx assoc
-           :my-pid js/process.pid
-           :docker docker
-           :podman podman
-           :network-config net-cfg
-           :network-state net-state)
+     docker (docker-client opts (:docker-socket opts))
+     podman (docker-client opts (:podman-socket opts))
+     _ (when (and (not docker) (not podman))
+         (fatal 1 "Failed to start either docker or podman client/listener"))
+     self-cid (get-container-id)
+     self-container (when self-cid
+                      (get-container docker self-cid))
+     compose-project (-> self-container
+                         :Config :Labels :com.docker.compose.project)]
+    (swap! ctx merge {:network-config net-cfg
+                      :network-state net-state
+                      :docker docker
+                      :podman podman
+                      :self-pid js/process.pid
+                      :self-cid self-cid
+                      :self-container self-container})
     (js/process.on "SIGINT" #(inner-exit-handler opts % "signal"))
     (js/process.on "uncaughtException" #(inner-exit-handler opts %1 %2))
+
+    (when self-cid
+      (info "Detected enclosing container:" self-cid))
+    (when compose-project
+      (info "Detected compose context:" compose-project))
 
     (P/do
       (when (= :ovs bridge-mode)
         (start-ovs opts))
+
+      ;;(Eprintln "sleeping")
+      ;;(P/delay 864000)
 
       ;; Check that domains/switches do not already exist
       (P/all (for [domain (-> @ctx :network-state :domains keys)]
@@ -272,9 +319,14 @@ Options:
       ;; Create domains/switch configs
       (P/all (for [domain (-> @ctx :network-state :domains keys)]
                (domain-create opts domain)))
-      ;; Generate fake events for existing containers
+
       (P/all (for [client [docker podman] :when client]
-               (P/let [containers ^obj (.listContainers client)]
+               (P/let
+                 [;; Listen for docker and/or podman events
+                  _ (docker-listen opts client {"event" ["start" "die"]}
+                                   (partial handle-event opts))
+                  containers ^obj (.listContainers client)]
+                 ;; Generate fake events for existing containers
                  (P/all (for [container containers
                               :let [ev {:status "start"
                                         :from "pre-existing"
@@ -315,6 +367,7 @@ Options:
     [{:as opts :keys [command verbose bridge-mode]} (parse-opts usage args)
      _ (when (empty? opts)
          (fatal 2 "either --network-file or --compose-file is required"))
+     _ (when verbose (Eprintln "User options:") (Epprint opts))
      opts (merge opts
                  {:bridge-mode (keyword bridge-mode)}
                  {:error #(apply Eprintln "ERROR" %&)
@@ -326,7 +379,6 @@ Options:
      command-fn (get COMMANDS command)]
 
     (when (not command-fn) (fatal 2 (str "Invalid command: " command)))
-    (when verbose (Eprintln "User options:") (Epprint opts))
     (command-fn opts)
     #_(Epprint (dissoc @ctx :network-container :docker :podman))
     nil))

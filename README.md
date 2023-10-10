@@ -70,12 +70,6 @@ From `node1` ping `node2`:
 docker-compose -f examples/test2-compose.yaml exec node1 ping 10.0.1.2
 ```
 
-From `node2` ping the "internet" namespace:
-
-```
-docker-compose -f examples/test2-compose.yaml exec node2 ping 8.8.8.8
-```
-
 
 ### test3: network config file only (no compose)
 
