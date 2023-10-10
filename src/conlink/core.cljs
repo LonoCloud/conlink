@@ -6,7 +6,10 @@
             [cljs-bean.core :refer [->clj ->js]]
             [conlink.util :refer [parse-opts Eprn Eprintln Epprint
                                   fatal spawn exec load-config]]
-            ["dockerode$default" :as Docker]))
+            #_["dockerode$default" :as Docker]))
+
+;; TODO: use require syntax when shadow-cljs works with "*$default"
+(def Docker (js/require "dockerode"))
 
 (def usage "
 conlink: advanced container layer 2/3 linking/networking.
