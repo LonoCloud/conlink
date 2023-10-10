@@ -15,11 +15,6 @@ usage () {
     echo "   --host-mode HOST_MODE  - External container manager mode:"
     echo "                            podman, docker, none"
     echo "                            (default: none)"
-    echo "   --host-network         - Enable networking via host"
-    echo "                            (i.e. docker/podman bridge or slirp4netns)"
-    echo "   --cmd CMD              - Command to run in conlink container:"
-    echo "                            conlink or config_mininet"
-    echo "                            (default: conlink)"
     echo ""
     echo "Where CONFIG_OPTIONS are (at least one must be specified):"
     echo "   --network-file NET_CFG  - Conlink network config file"
@@ -56,13 +51,11 @@ while [ "${*}" ]; do
   param=$1; OPTARG=$2
   case ${param} in
   -v|--verbose) VERBOSE=1 CMD_OPTS="${CMD_OPTS} -v" ;;
-  -vv) VERBOSE=1 CMD_OPTS="${CMD_OPTS} -v -v" ;;
+  #-vv) VERBOSE=1 CMD_OPTS="${CMD_OPTS} -v -v" ;;
   --dry-run) DRY_RUN=1 ;;
   --mode) MODE="${OPTARG}"; shift ;;
   --image) IMAGE="${OPTARG}"; shift ;;
   --host-mode) HOST_MODE="${OPTARG}"; shift ;;
-  --host-network) ;;
-  --cmd) CMD="${OPTARG}"; shift ;;
   --network-file) NETWORK_FILE="${OPTARG}"; shift ;;
   --compose-file) COMPOSE_FILE="${OPTARG}"; shift ;;
   -h|--help) usage ;;
@@ -86,12 +79,6 @@ esac
 [ "${NETWORK_FILE}" -o "${COMPOSE_FILE}" ] || \
   die "One or both required: --network-file or --compose-file"
 
-case "${CMD}" in
-  conlink) [ "${COMPOSE_FILE}" ] && die "config_mininet does not support --compose-file" ;;
-  config_mininet) [ "${NETWORK_FILE}" ] || die "config_mininet requires --network-file" ;;
-  *) die "Unknown command: ${CMD}" ;;
-esac
-
 ### Construct command line arguments
 vecho "Settings:"
 RUN_OPTS="${RUN_OPTS} --security-opt apparmor=unconfined"
@@ -100,10 +87,7 @@ vecho "  - mount network/compose config files"
 if [ "${NETWORK_FILE}" ]; then
   network_path=/root/$(basename ${NETWORK_FILE})
   RUN_OPTS="${RUN_OPTS} -v $(readlink -f ${NETWORK_FILE}):${network_path}:ro"
-  case "${CMD}" in
-    *conlink) CMD_OPTS="${CMD_OPTS} --network-file ${network_path}" ;;
-    *config_mininet) CMD_OPTS="${CMD_OPTS} ${network_path}" ;;
-  esac
+  CMD_OPTS="${CMD_OPTS} --network-file ${network_path}" ;;
 fi
 if [ "${COMPOSE_FILE}" ]; then
   compose_path=/root/$(basename ${COMPOSE_FILE})
@@ -179,7 +163,7 @@ if [ "${HOST_MODE}" = "podman" ]; then
   [ -e "${HOST_SOCK_PATH}" ] || die "podman service did not start in 5 seconds"
 fi
 
-### Run conlink/docker/config_mininet
+### Run conlink/docker
 vecho "Starting conlink"
 echo ${MODE} run ${RUN_OPTS} "${@}" ${IMAGE} ${CMD} ${CMD_OPTS}
 [ ${DRY_RUN} ] || ${MODE} run ${RUN_OPTS} "${@}" ${IMAGE} ${CMD} ${CMD_OPTS}
