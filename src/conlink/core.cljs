@@ -154,7 +154,7 @@ Options:
 (defn domain-create [{:as opts :keys [info bridge-mode]} domain]
   (P/let [_ (info "Creating domain/switch" domain)
           cmd (get {:ovs (str "ovs-vsctl add-br " domain)
-                    :linux (str "ip link add " domain " type bridge")}
+                    :linux (str "ip link add " domain " up type bridge")}
                    bridge-mode)
           res (run cmd opts)]
     (if (not= 0 (:code res))
