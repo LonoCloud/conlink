@@ -19,24 +19,26 @@ Usage:
 
 Command is one of: inner, outer, show.
 
-Options:
+General Options:
   -v, --verbose                     Show verbose output (stderr)
                                     [env: VERBOSE]
+
+Inner Options:
   --bridge-mode BRIDGE-MODE         Bridge mode (ovs or linux) to use for
                                     broadcast domains
                                     [default: ovs]
-  --project PROJECT                 Docker compose project name
-                                    [env: COMPOSE_PROJECT_NAME]
   --network-file NETWORK-FILE...    Network configuration file
   --compose-file COMPOSE-FILE...    Docker compose file
-  --network-image IMAGE             Image to use for network container
-                                    [default: conlink]
-  --network-mode MODE               Network container mode: docker, podman, here
-                                    [default: docker]
   --docker-socket PATH              Docker socket to listen to
                                     [default: /var/run/docker.sock]
   --podman-socket PATH              Podman socket to listen to
                                     [default: /var/run/podman/podman.sock]
+
+Outer Options:
+  --network-image IMAGE             Image to use for network container
+                                    [default: conlink]
+  --network-mode MODE               Network container mode: docker, podman, here
+                                    [default: docker]
 ")
 
 (def OVS-START-CMD "/usr/share/openvswitch/scripts/ovs-ctl start --system-id=random --no-mlockall --delete-bridges")
@@ -95,12 +97,12 @@ Options:
                 (swap! attempt inc) ;; Fix when P/loop supports values
                 (P/recur))))))))))
 
-(defn start-network-container [{:as opts :keys [log]}]
-  (P/let [mode (keyword (:network-mode opts))
-          docker (get opts mode)
-          opts {:Image "conlink",
-                :Cmd ["sleep", "864000"],
-                :Privileged true,
+(defn start-network-container
+  [{:as opts :keys [log network-mode network-image]}]
+  (P/let [docker (get opts network-mode)
+          opts {:Image network-image,
+                :Cmd ["sleep" "864000"]
+                :Privileged true
                 :Pid "host"
                 #_#_:Network "none"}
           nc ^obj (.createContainer docker (->js opts))
@@ -383,12 +385,13 @@ Options:
 
 (defn main [& args]
   (P/let
-    [{:as opts :keys [command verbose bridge-mode]} (parse-opts usage args)
+    [{:as opts :keys [command verbose]} (parse-opts usage args)
      _ (when (empty? opts)
          (fatal 2 "either --network-file or --compose-file is required"))
      _ (when verbose (Eprintln "User options:") (Epprint opts))
      opts (merge opts
-                 {:bridge-mode (keyword bridge-mode)}
+                 {:bridge-mode (keyword (:bridge-mode opts))
+                  :network-mode (keyword (:network-mode opts))}
                  {:error #(apply Eprintln "ERROR" %&)
                   :warn  #(apply Eprintln "WARNING:" %&)
                   :log   Eprintln}
