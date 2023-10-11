@@ -127,6 +127,11 @@ Options:
       (fatal 1 (str "Failed starting OVS: " (:stderr res)))
       res)))
 
+(defn kmod-loaded? [opts kmod]
+  (P/let [cmd (str "grep -o '^" kmod "\\>' /proc/modules")
+          res (run cmd (assoc opts :error list))]
+    (and (= 0 (:code res)) (= kmod (trim (:stdout res))))))
+
 (defn check-no-domain [{:as opts :keys [bridge-mode]} domain]
   (P/let [cmd (get {:ovs (str "ovs-vsctl list-ifaces " domain)
                     :linux (str "ip link show type bridge " domain)}
@@ -277,9 +282,14 @@ Options:
                    (domain-del opts domain)))))
       (js/process.exit 127))))
 
-(defn inner [{:as opts :keys [info bridge-mode]}]
+(defn inner [{:as opts :keys [log info bridge-mode]}]
   (P/let
-    [net-cfg (P/-> (load-config (first (:network-file opts)))
+    [kmod-okay? (if (= :ovs bridge-mode)
+                  (kmod-loaded? opts "openvswitch")
+                  true)
+     _ (when (not kmod-okay?)
+         (fatal 2 "bridge-mode is 'ovs' and no 'openvswitch' module loaded"))
+     net-cfg (P/-> (load-config (first (:network-file opts)))
                    enrich-network-config)
      net-state (gen-network-state net-cfg)
      docker (docker-client opts (:docker-socket opts))
@@ -301,6 +311,7 @@ Options:
     (js/process.on "SIGINT" #(inner-exit-handler opts % "signal"))
     (js/process.on "uncaughtException" #(inner-exit-handler opts %1 %2))
 
+    (log "Bridge mode:" (get {:ovs "openvswitch" :linux "linux"} bridge-mode))
     (when self-cid
       (info "Detected enclosing container:" self-cid))
     (when compose-project
