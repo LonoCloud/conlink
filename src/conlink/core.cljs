@@ -184,12 +184,13 @@ Outer Options:
 
 
 (defn link-create [{:as opts :keys [error]} link inner-pid outer-pid outer-if]
-  (P/let [{:keys [interface mtu mac ip]} link
+  (P/let [{:keys [interface mtu mac ip route]} link
           status-path [:network-state :links outer-if :status]
           link-status (get-in @ctx status-path)
           cmd (str "./veth-link.sh"
                    (when mac (str " --mac0 " mac))
                    (when ip (str " --ip0 " ip))
+                   (when route (str " --route0 '" route "'"))
                    " --mtu " (or mtu 9000)
                    " " interface " " outer-if
                    " " inner-pid " " outer-pid)]

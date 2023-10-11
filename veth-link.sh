@@ -14,15 +14,18 @@ usage () {
     echo >&2 "  PID1 is the process ID of the second container"
     echo >&2 ""
     echo >&2 "  Where OPTIONS are:"
-    echo >&2 "     --ip0 IP0    - IP address"
-    echo >&2 "     --ip1 IP1    - IP address"
-    echo >&2 "     --mac0 MAC0  - MAC address"
-    echo >&2 "     --mac1 MAC1  - MAC address"
+    echo >&2 "     --ip0 IP0    - IP address for INTF0"
+    echo >&2 "     --ip1 IP1    - IP address for INTF1"
+    echo >&2 "     --mac0 MAC0  - MAC address for INTF0"
+    echo >&2 "     --mac1 MAC1  - MAC address for INTF1"
+    echo >&2 "     --route0 'ROUTE' - route to add to INTF0"
+    echo >&2 "     --route1 'ROUTE' - route to add to INTF1"
+    echo >&2 "     --mtu MTU    - MTU for both interfaces"
     exit 2
 }
 
 VERBOSE=${VERBOSE:-}
-IP0= IP1= MAC0= MAC1= PID0= PID1=
+IP0= IP1= MAC0= MAC1= PID0= PID1= ROUTE0= ROUTE1= MTU=
 
 info() { echo "veth-link [${PID0}/${IF0} <-> ${PID1}/${IF1}] ${*}"; }
 warn() { >&2 echo "veth-link [${PID0}/${IF0} <-> ${PID1}/${IF1}] ${*}"; }
@@ -30,13 +33,14 @@ die () { warn "ERROR: ${*}"; exit 1; }
 
 # Set MAC, IP, and up state for interface within netns
 setup_if() {
-  local IF=$1 NS=$2 MAC=$3 IP=$4 MTU=$5
+  local IF=$1 NS=$2 MAC=$3 IP=$4 ROUTE=$5 MTU=$6
 
   ip -netns ${NS} --force -b - <<EOF
       ${IP:+addr add ${IP} dev ${IF}}
       ${MAC:+link set dev ${IF} address ${MAC}}
       ${MTU:+link set dev ${IF} mtu ${MTU}}
       link set dev ${IF} up
+      ${ROUTE:+route add ${ROUTE} dev ${IF}}
 EOF
 }
 
@@ -50,6 +54,8 @@ while [ "${*}" ]; do
   --ip1) IP1="${OPTARG}"; shift ;;
   --mac0) MAC0="${OPTARG}"; shift ;;
   --mac1) MAC1="${OPTARG}"; shift ;;
+  --route0) ROUTE0="${OPTARG}"; shift ;;
+  --route1) ROUTE1="${OPTARG}"; shift ;;
   --mtu) MTU="${OPTARG}"; shift ;;
   -h|--help) usage ;;
   *) positional="${positional} $1" ;;
@@ -80,8 +86,8 @@ ln -sf /proc/${PID1}/ns/net /var/run/netns/ns${PID1}
 info "Creating veth pair with ends in each namespace"
 ip link add ${IF0} netns ns${PID0} type veth peer ${IF1} netns ns${PID1}
 
-info "Setting MAC, IP, and up state"
-setup_if ${IF0} ns${PID0} "${MAC0}" "${IP0}" "${MTU}"
-setup_if ${IF1} ns${PID1} "${MAC1}" "${IP1}" "${MTU}"
+info "Setting MAC, IP, ROUTE, MTU, and up state"
+setup_if ${IF0} ns${PID0} "${MAC0}" "${IP0}" "${ROUTE0}" "${MTU}"
+setup_if ${IF1} ns${PID1} "${MAC1}" "${IP1}" "${ROUTE1}" "${MTU}"
 
 info "Created veth pair link (${IP0}|${MAC0} <-> ${IP1}|${MAC1})"
