@@ -4,7 +4,7 @@
   (:require [clojure.string :as S]
             [promesa.core :as P]
             [cljs-bean.core :refer [->clj ->js]]
-            [conlink.util :refer [parse-opts Eprintln Epprint
+            [conlink.util :refer [parse-opts Eprintln Epprint trim
                                   fatal spawn read-file load-config]]
             #_["dockerode$default" :as Docker]))
 
@@ -53,18 +53,23 @@ Options:
       (S/replace #"[\n]*$" "")
       (S/replace #"(^|[\n])" (str "$1" pre))))
 
-(defn enrich-network-config [cfg]
-  (let [links (for [{:as link :keys [container service interface]} (:links cfg)
-                    ;; TODO: do something more sane here
-                    :let [oif (str (or container service) "-" interface)]]
-                (merge link {:outer-interface oif}))]
-    (assoc cfg :links links)))
+
+(defn gen-outer-interface
+  "outer-interface format:
+     - standalone:  container          '-' interface
+     - compose:     service '_' index  '-' interface
+     - len > 15:    'c' cid[0:8]       '-' interface[0:5]"
+  [{:keys [container service interface]} cid index]
+  (let [oif (str (if service (str service "_" index) container) "-" interface)]
+    (if (<= (count oif) 15)
+      oif
+      (str "c" (.substring cid 0 8)  "-" (.substring interface 0 5)))))
 
 (defn gen-network-state [net-cfg]
-  (reduce (fn [c {:as l :keys [outer-interface service container domain]}]
-            (assert domain (str "No domain specified for link:" outer-interface))
+  (reduce (fn [c {:as l :keys [service container interface domain]}]
+            (assert domain (str "No domain specified for link:"
+                                (str (or container service) ":" interface)))
             (cond-> c
-                true (assoc-in [:links outer-interface] (assoc l :status nil))
                 true (assoc-in [:domains domain :status] nil)
                 container (update-in [:containers container :links] conjv l)
                 service   (update-in [:services service :links] conjv l)))
@@ -106,7 +111,7 @@ Options:
                (log "Waitig for network container to start"))))
     nc))
 
-;;; Link and bridge commands
+;;; Inner commands
 
 (defn run [cmd {:keys [id info error]}]
   (P/let [id (if id (str " (" id ")") "")
@@ -131,6 +136,8 @@ Options:
   (P/let [cmd (str "grep -o '^" kmod "\\>' /proc/modules")
           res (run cmd (assoc opts :error list))]
     (and (= 0 (:code res)) (= kmod (trim (:stdout res))))))
+
+;;; Inner link and bridge commands
 
 (defn check-no-domain [{:as opts :keys [bridge-mode]} domain]
   (P/let [cmd (get {:ovs (str "ovs-vsctl list-ifaces " domain)
@@ -174,20 +181,20 @@ Options:
       res)))
 
 
-(defn link-create [{:as opts :keys [error]} link inner-pid outer-pid]
-  (P/let [{:keys [interface outer-interface mtu mac ip]} link
-          status-path [:network-state :links outer-interface :status]
+(defn link-create [{:as opts :keys [error]} link inner-pid outer-pid outer-if]
+  (P/let [{:keys [interface mtu mac ip]} link
+          status-path [:network-state :links outer-if :status]
           link-status (get-in @ctx status-path)
           cmd (str "./veth-link.sh"
                    (when mac (str " --mac0 " mac))
                    (when ip (str " --ip0 " ip))
                    " --mtu " (or mtu 9000)
-                   " " interface " " outer-interface
+                   " " interface " " outer-if
                    " " inner-pid " " outer-pid)]
     (if link-status
-      (error (str "Link " outer-interface " already exists"))
+      (error (str "Link " outer-if " already exists"))
       (P/do (swap! ctx assoc-in status-path :created)
-            (run cmd (assoc opts :id outer-interface))))))
+            (run cmd (assoc opts :id outer-if))))))
 
 (defn link-del [{:as opts :keys [error]} interface]
   (P/let [status-path [:network-state :links interface :status]
@@ -242,6 +249,7 @@ Options:
           container (get-container client id)
           cname (->> (:Name container) (re-seq #"(.*/)?(.*)") first last)
           sname (-> container :Config :Labels :com.docker.compose.service)
+          sindex (-> container :Config :Labels :com.docker.compose.container-number)
           Pid (-> container :State :Pid)
           clinks (get-in network-state [:containers cname :links])
           slinks (get-in network-state [:services sname :links])
@@ -250,17 +258,18 @@ Options:
       (info (str "Event: no links defined for " cname ", ignoring"))
       (do
         (info "Event:" status cname id)
-        (P/all (for [{:as link :keys [interface outer-interface domain]} links]
+        (P/all (for [{:as link :keys [interface domain]} links
+                     :let [oif (gen-outer-interface link id sindex)]]
                  (if (= status "start")
                    (P/do
                      (log (str "Creating link (in " domain ") "
-                               outer-interface " -> " cname ":" interface))
-                     (link-create opts link Pid self-pid)
-                     (domain-add-link opts domain outer-interface))
+                               oif " -> " cname ":" interface))
+                     (link-create opts link Pid self-pid oif)
+                     (domain-add-link opts domain oif))
                    (P/do
                      (log (str "Deleting link (in " domain ") "
-                               outer-interface " -> " cname ":" interface))
-                     (link-del opts outer-interface)))))))))
+                               oif " -> " cname ":" interface))
+                     (link-del opts oif)))))))))
 
 (defn inner-exit-handler [{:as opts :keys [log info]} err origin]
   (let [{:keys [network-state]} @ctx
@@ -289,8 +298,7 @@ Options:
                   true)
      _ (when (not kmod-okay?)
          (fatal 2 "bridge-mode is 'ovs' and no 'openvswitch' module loaded"))
-     net-cfg (P/-> (load-config (first (:network-file opts)))
-                   enrich-network-config)
+     net-cfg (load-config (first (:network-file opts)))
      net-state (gen-network-state net-cfg)
      docker (docker-client opts (:docker-socket opts))
      podman (docker-client opts (:podman-socket opts))
