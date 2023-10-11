@@ -55,6 +55,21 @@ Outer Options:
       (S/replace #"[\n]*$" "")
       (S/replace #"(^|[\n])" (str "$1" pre))))
 
+(defn deep-merge [a b]
+  (merge-with #(cond (map? %1) (recur %1 %2)
+                     (vector? %1) (vec (concat %1 %2))
+                     (sequential? %1) (concat %1 %2)
+                     :else %2)
+              a b))
+
+(defn load-configs [comp-cfgs net-cfgs]
+  (P/let [comp-cfgs (P/all (map load-config comp-cfgs))
+          xnet-cfgs (mapcat #(into [(:x-network %)]
+                                   (map :x-network (-> % :services vals)))
+                            comp-cfgs)
+          net-cfgs (P/all (map load-config net-cfgs))
+          net-cfg (reduce deep-merge {} (concat xnet-cfgs net-cfgs))]
+    net-cfg))
 
 (defn gen-outer-interface
   "outer-interface format:
@@ -294,14 +309,16 @@ Outer Options:
                    (domain-del opts domain)))))
       (js/process.exit 127))))
 
-(defn inner [{:as opts :keys [log info bridge-mode]}]
+(defn inner [{:as opts :keys [log info bridge-mode network-file compose-file]}]
   (P/let
-    [kmod-okay? (if (= :ovs bridge-mode)
+    [_ (when (and (empty? network-file) (empty? compose-file))
+         (fatal 2 "either --network-file or --compose-file is required"))
+     kmod-okay? (if (= :ovs bridge-mode)
                   (kmod-loaded? opts "openvswitch")
                   true)
      _ (when (not kmod-okay?)
-         (fatal 2 "bridge-mode is 'ovs' and no 'openvswitch' module loaded"))
-     net-cfg (load-config (first (:network-file opts)))
+         (fatal 2 "bridge-mode is 'ovs', but no 'openvswitch' module loaded"))
+     net-cfg (load-configs compose-file network-file)
      net-state (gen-network-state net-cfg)
      docker (docker-client opts (:docker-socket opts))
      podman (docker-client opts (:podman-socket opts))
@@ -323,6 +340,9 @@ Outer Options:
     (js/process.on "uncaughtException" #(inner-exit-handler opts %1 %2))
 
     (log "Bridge mode:" (get {:ovs "openvswitch" :linux "linux"} bridge-mode))
+    (when (:verbose opts)
+      (info "Full network configuration:")
+      (Epprint net-cfg))
     (when self-cid
       (info "Detected enclosing container:" self-cid))
     (when compose-project
@@ -387,8 +407,6 @@ Outer Options:
 (defn main [& args]
   (P/let
     [{:as opts :keys [command verbose]} (parse-opts usage args)
-     _ (when (empty? opts)
-         (fatal 2 "either --network-file or --compose-file is required"))
      _ (when verbose (Eprintln "User options:") (Epprint opts))
      opts (merge opts
                  {:bridge-mode (keyword (:bridge-mode opts))

@@ -51,8 +51,10 @@ Start the test1 compose configuration:
 docker-compose -f examples/test1-compose.yaml up --build --force-recreate
 ```
 
+From h1 ping the address of h3 (routed via the r0 container):
+
 ```
-sudo nsenter -n -t $(pgrep -f mininet:h1) ping 10.0.0.100
+docker-compose -f examples/test1-compose.yaml exec h1 ping 10.0.0.100
 ```
 
 
