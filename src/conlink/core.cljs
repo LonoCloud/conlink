@@ -19,7 +19,7 @@ conlink: advanced container layer 2/3 linking/networking.
 Usage:
   conlink <command> [options]
 
-Command is one of: inner, outer, show.
+Command is one of: inner, show.
 
 General Options:
   -v, --verbose                     Show verbose output (stderr)
@@ -35,12 +35,6 @@ Inner Options:
                                     [default: /var/run/docker.sock]
   --podman-socket PATH              Podman socket to listen to
                                     [default: /var/run/podman/podman.sock]
-
-Outer Options:
-  --network-image IMAGE             Image to use for network container
-                                    [default: conlink]
-  --network-mode MODE               Network container mode: docker, podman, here
-                                    [default: docker]
 ")
 
 (def OVS-START-CMD "/usr/share/openvswitch/scripts/ovs-ctl start --system-id=random --no-mlockall --delete-bridges")
@@ -93,41 +87,6 @@ Outer Options:
                       (+ offset (addrs/ip->int ip)))
                     "/" prefix)))]
     (merge link (when mac {:mac mac}) (when ip {:ip ip}))))
-
-;;; Outer commands
-
-(defn wait
- ([pred] (wait {} pred))
- ([opts pred]
-  (P/let [{:keys [attempts sleep-ms timeout-fn]
-           :or {sleep-ms 200 timeout-fn #(identity false)}} opts]
-    (P/let [attempt (atom 0)]
-      (P/loop []
-        (P/let [res (pred)]
-          (if res
-            res
-            (if (and attempts (> @attempt  attempts))
-              (timeout-fn)
-              (P/do
-                (P/delay sleep-ms)
-                (swap! attempt inc) ;; Fix when P/loop supports values
-                (P/recur))))))))))
-
-(defn start-network-container
-  [{:as opts :keys [log network-mode network-image]}]
-  (P/let [docker (get opts network-mode)
-          opts {:Image network-image,
-                :Cmd ["sleep" "864000"]
-                :Privileged true
-                :Pid "host"
-                #_#_:Network "none"}
-          nc ^obj (.createContainer docker (->js opts))
-          _ (.start nc)]
-    (wait #(P/let [res (P/-> ^obj (.inspect nc) ->clj)]
-             (if (-> res :State :Running)
-               res
-               (log "Waitig for network container to start"))))
-    nc))
 
 ;;; Inner commands
 
@@ -407,31 +366,11 @@ Outer Options:
 
 ;;;
 
-(defn outer-exit-handler [{:as opts :keys [log info]} err origin]
-  (let [{:keys [network-container network-state]} @ctx
-        domains (keys (filter #(:status %)
-                              (:domains network-state)))]
-    (info (str "Got " origin ":") err)
-    (P/do
-      (when network-container
-        (P/do
-          (log "Killing network container")
-          (.remove network-container #js {:force true})))
-      (js/process.exit 127))))
-
-(defn outer [opts]
-  (P/let [net-cnt-obj (start-network-container opts)
-          net-cnt ^obj (.inspect net-cnt-obj)
-          opts (merge opts {:network-container net-cnt-obj
-                            :network-pid (-> net-cnt :State :Pid)})]
-    true))
-
 (defn show [opts]
   (prn :show-command)
   true)
 
 (def COMMANDS {"inner" inner
-               "outer" outer
                "show"  show})
 
 (defn main [& args]
