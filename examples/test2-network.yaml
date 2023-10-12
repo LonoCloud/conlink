@@ -1,8 +1,6 @@
 links:
-  - {domain: s1, service: node1,    interface: eth0, ip: 10.0.1.1/16, route: "default via 10.0.0.1"}
-  - {domain: s1, service: node2,    interface: eth0, ip: 10.0.1.2/16, route: "default via 10.0.0.1"}
+  - {domain: s1, service: node,    interface: eth0, ip: 10.0.1.1/16, route: "default via 10.0.0.1"}
 
   - {domain: s1, service: internet, interface: eth0, ip: 10.0.0.1/16}
   # TODO: change i0 to dummy interface
   - {domain: s2, service: internet, interface: i0,   ip: 8.8.8.8/24}
-

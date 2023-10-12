@@ -27,7 +27,8 @@
       clean-opts))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; General utilities
+;; General functions
+
 (defn snake->pascal [v]
   (S/join
     "" (for [[chr1 & chrN] (-> v .toLowerCase (S/split #"-"))]
@@ -45,6 +46,21 @@
 (defn left-pad [s pad]
   (.padStart (str s) pad " "))
 
+(defn indent [s pre]
+  (-> s
+      (S/replace #"[\n]*$" "")
+      (S/replace #"(^|[\n])" (str "$1" pre))))
+
+(defn deep-merge [a b]
+  (merge-with #(cond (map? %1) (recur %1 %2)
+                     (vector? %1) (vec (concat %1 %2))
+                     (sequential? %1) (concat %1 %2)
+                     :else %2)
+              a b))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Printing functions
+
 (def Eprn     #(binding [*print-fn* *print-err-fn*] (apply prn %&)))
 (def Eprintln #(binding [*print-fn* *print-err-fn*] (apply println %&)))
 (def Epprint  #(binding [*print-fn* *print-err-fn*] (pprint %)))
@@ -54,6 +70,9 @@
     (apply Eprintln args))
   (js/process.exit code))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Promise-based exec and file functions
 
 (def exec-promise (promisify cp/exec))
 (defn exec [cmd & [opts]]
@@ -96,3 +115,4 @@
                 (re-seq #".*\.edn$" file)
                 (edn/read-string raw))]
     (->clj cfg)))
+

@@ -4,8 +4,10 @@
   (:require [clojure.string :as S]
             [promesa.core :as P]
             [cljs-bean.core :refer [->clj ->js]]
-            [conlink.util :refer [parse-opts Eprintln Epprint trim
-                                  fatal spawn read-file load-config]]
+            [conlink.util :refer [parse-opts Eprintln Epprint fatal
+                                  trim indent deep-merge
+                                  spawn read-file load-config]]
+            [conlink.addrs :as addrs]
             #_["dockerode$default" :as Docker]))
 
 ;; TODO: use require syntax when shadow-cljs works with "*$default"
@@ -50,18 +52,6 @@ Outer Options:
 
 (def conjv (fnil conj []))
 
-(defn indent [s pre]
-  (-> s
-      (S/replace #"[\n]*$" "")
-      (S/replace #"(^|[\n])" (str "$1" pre))))
-
-(defn deep-merge [a b]
-  (merge-with #(cond (map? %1) (recur %1 %2)
-                     (vector? %1) (vec (concat %1 %2))
-                     (sequential? %1) (concat %1 %2)
-                     :else %2)
-              a b))
-
 (defn load-configs [comp-cfgs net-cfgs]
   (P/let [comp-cfgs (P/all (map load-config comp-cfgs))
           xnet-cfgs (mapcat #(into [(:x-network %)]
@@ -70,17 +60,6 @@ Outer Options:
           net-cfgs (P/all (map load-config net-cfgs))
           net-cfg (reduce deep-merge {} (concat xnet-cfgs net-cfgs))]
     net-cfg))
-
-(defn gen-outer-interface
-  "outer-interface format:
-     - standalone:  container          '-' interface
-     - compose:     service '_' index  '-' interface
-     - len > 15:    'c' cid[0:8]       '-' interface[0:5]"
-  [{:keys [container service interface]} cid index]
-  (let [oif (str (if service (str service "_" index) container) "-" interface)]
-    (if (<= (count oif) 15)
-      oif
-      (str "c" (.substring cid 0 8)  "-" (.substring interface 0 5)))))
 
 (defn gen-network-state [net-cfg]
   (reduce (fn [c {:as l :keys [service container interface domain]}]
@@ -92,6 +71,28 @@ Outer Options:
                 service   (update-in [:services service :links] conjv l)))
           {} (:links net-cfg)))
 
+(defn link-add-outer-interface
+  "outer-interface format:
+     - standalone:  container          '-' interface
+     - compose:     service '_' index  '-' interface
+     - len > 15:    'c' cid[0:8]       '-' interface[0:5]"
+  [{:as link :keys [container service interface]} cid index]
+  (let [oif (str (if service (str service "_" index) container) "-" interface)
+        oif (if (<= (count oif) 15)
+              oif
+              (str "c" (.substring cid 0 8)  "-" (.substring interface 0 5)))]
+    (assoc link :outer-interface oif)))
+
+(defn link-add-offset [{:as link :keys [ip mac]} offset]
+  (let [mac (when mac
+              (addrs/int->mac
+                (+ offset (addrs/mac->int mac))))
+        ip (when ip
+             (let [[ip prefix] (S/split ip #"/")]
+               (str (addrs/int->ip
+                      (+ offset (addrs/ip->int ip)))
+                    "/" prefix)))]
+    (merge link (when mac {:mac mac}) (when ip {:ip ip}))))
 
 ;;; Outer commands
 
@@ -194,25 +195,35 @@ Outer Options:
           res (run cmd opts)]
     (if (not= 0 (:code res))
       (error (str "ERROR: link " interface
-                  " failed to adopt into " domain))
+                  " failed to add into " domain))
+      res)))
+
+(defn domain-drop-link [{:as opts :keys [error bridge-mode]} domain interface]
+  (P/let [cmd (get {:ovs (str "ovs-vsctl del-port " domain " " interface)
+                    :linux (str "ip link set dev " interface " nomaster")}
+                   bridge-mode)
+          res (run cmd opts)]
+    (if (not= 0 (:code res))
+      (error (str "ERROR: link " interface
+                  " failed to drop from " domain))
       res)))
 
 
-(defn link-create [{:as opts :keys [error]} link inner-pid outer-pid outer-if]
-  (P/let [{:keys [interface mtu mac ip route]} link
-          status-path [:network-state :links outer-if :status]
-          link-status (get-in @ctx status-path)
-          cmd (str "./veth-link.sh"
-                   (when mac (str " --mac0 " mac))
-                   (when ip (str " --ip0 " ip))
-                   (when route (str " --route0 '" route "'"))
-                   " --mtu " (or mtu 9000)
-                   " " interface " " outer-if
-                   " " inner-pid " " outer-pid)]
+(defn link-create [{:as opts :keys [error]} link inner-pid outer-pid]
+  (P/let [{:keys [interface mtu mac ip route outer-interface]} link
+          status-path [:network-state :links outer-interface :status]
+          link-status (get-in @ctx status-path)]
     (if link-status
-      (error (str "Link " outer-if " already exists"))
-      (P/do (swap! ctx assoc-in status-path :created)
-            (run cmd (assoc opts :id outer-if))))))
+      (error (str "Link " outer-interface " already exists"))
+      (P/let [_ (swap! ctx assoc-in status-path :created)
+              cmd (str "./veth-link.sh"
+                       (when mac (str " --mac0 " mac))
+                       (when ip (str " --ip0 " ip))
+                       (when route (str " --route0 '" route "'"))
+                       " --mtu " (or mtu 9000)
+                       " " interface " " outer-interface
+                       " " inner-pid " " outer-pid)]
+        (run cmd (assoc opts :id outer-interface))))))
 
 (defn link-del [{:as opts :keys [error]} interface]
   (P/let [status-path [:network-state :links interface :status]
@@ -272,7 +283,8 @@ Outer Options:
           container (get-container client id)
           cname (->> (:Name container) (re-seq #"(.*/)?(.*)") first last)
           sname (-> container :Config :Labels :com.docker.compose.service)
-          sindex (-> container :Config :Labels :com.docker.compose.container-number)
+          snum (-> container :Config :Labels :com.docker.compose.container-number)
+          sindex (if snum (js/parseInt snum) 1)
           Pid (-> container :State :Pid)
           clinks (get-in network-state [:containers cname :links])
           slinks (get-in network-state [:services sname :links])
@@ -281,17 +293,21 @@ Outer Options:
       (info (str "Event: no links defined for " cname ", ignoring"))
       (do
         (info "Event:" status cname id)
-        (P/all (for [{:as link :keys [interface domain]} links
-                     :let [oif (gen-outer-interface link id sindex)]]
+        (P/all (for [{:as link :keys [interface domain ip mac]} links
+                     :let [link (-> link
+                                    (link-add-outer-interface id sindex)
+                                    (link-add-offset (dec sindex)))
+                           oif (:outer-interface link)]]
                  (if (= status "start")
                    (P/do
                      (log (str "Creating link (in " domain ") "
                                oif " -> " cname ":" interface))
-                     (link-create opts link Pid self-pid oif)
+                     (link-create opts link Pid self-pid)
                      (domain-add-link opts domain oif))
                    (P/do
                      (log (str "Deleting link (in " domain ") "
                                oif " -> " cname ":" interface))
+                     (domain-drop-link opts domain oif)
                      (link-del opts oif)))))))))
 
 (defn inner-exit-handler [{:as opts :keys [log info]} err origin]
@@ -366,9 +382,6 @@ Outer Options:
     (P/do
       (when (= :ovs bridge-mode)
         (start-ovs opts))
-
-      ;;(Eprintln "sleeping")
-      ;;(P/delay 864000)
 
       ;; Check that domains/switches do not already exist
       (P/all (for [domain (-> @ctx :network-state :domains keys)]

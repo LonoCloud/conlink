@@ -58,18 +58,26 @@ docker-compose -f examples/test1-compose.yaml exec h1 ping 10.0.0.100
 ```
 
 
-### test2: compose file with separate network config file
+### test2: compose file with separate network config and live scaling
 
 Start the test2 compose configuration:
 
 ```
-docker-compose -f examples/test2-compose.yaml up --build --force-recreate
+docker-compose -f examples/test2-compose.yaml up -d --build --force-recreate
 ```
 
-From `node1` ping `node2`:
+From the second node ping the first:
 
 ```
-docker-compose -f examples/test2-compose.yaml exec node1 ping 10.0.1.2
+docker-compose -f examples/test2-compose.yaml exec node --index 2 ping 10.0.1.1
+```
+
+Scale the nodes from 2 to 5 and then ping from fifth node from the fifth:
+
+```
+docker-compose -f examples/test2-compose.yaml up -d
+docker-compose -f examples/test2-compose.yaml up -d --scale node=5
+docker-compose -f examples/test2-compose.yaml exec node --index 1 ping 10.0.1.5
 ```
 
 
