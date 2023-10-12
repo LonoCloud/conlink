@@ -13,12 +13,9 @@ version: "2.4"
 
 x-network:
   links:
-    #- {domain: s1, service: h1, interface: eth0, ip: "192.168.1.${H1_INDEX:-100}/24", route: "0.0.0.0/0 via 192.168.1.1"}
-    #- {domain: s2, service: h2, interface: eth0, ip: "172.16.0.${H2_INDEX:-100}/12",  route: "0.0.0.0/0 via 172.16.0.1"}
-    #- {domain: s3, service: h3, interface: eth0, ip: "10.0.0.${H3_INDEX:-100}/8",     route: "0.0.0.0/0 via 10.0.0.1"}
-    - {domain: s1, service: h1, interface: eth0, ip: "192.168.1.100/24", route: "0.0.0.0/0 via 192.168.1.1"}
-    - {domain: s2, service: h2, interface: eth0, ip: "172.16.0.100/12",  route: "0.0.0.0/0 via 172.16.0.1"}
-    - {domain: s3, service: h3, interface: eth0, ip: "10.0.0.100/8",     route: "0.0.0.0/0 via 10.0.0.1"}
+    - {domain: s1, service: h1, interface: eth0, ip: "192.168.1.${H1_INDEX:-100}/24", route: "0.0.0.0/0 via 192.168.1.1"}
+    - {domain: s2, service: h2, interface: eth0, ip: "172.16.0.${H2_INDEX:-100}/12",  route: "0.0.0.0/0 via 172.16.0.1"}
+    - {domain: s3, service: h3, interface: eth0, ip: "10.0.0.${H3_INDEX:-100}/8",     route: "0.0.0.0/0 via 10.0.0.1"}
 
 services:
   r0:

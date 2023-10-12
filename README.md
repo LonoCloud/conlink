@@ -43,7 +43,7 @@ docker build -t conlink .
 podman build -t conlink .
 ```
 
-### test1: compose file with embedded network config
+### test1: compose file with embedded network config and variable templating
 
 Start the test1 compose configuration:
 

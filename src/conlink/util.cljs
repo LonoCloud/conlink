@@ -1,6 +1,7 @@
 (ns conlink.util
   (:require [cljs.pprint :refer [pprint]]
             [clojure.string :as S]
+            [clojure.walk :refer [postwalk]]
             [clojure.edn :as edn]
             [promesa.core :as P]
             [cljs-bean.core :refer [->clj]]
@@ -29,6 +30,25 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; General functions
 
+(def Eprn     #(binding [*print-fn* *print-err-fn*] (apply prn %&)))
+(def Eprintln #(binding [*print-fn* *print-err-fn*] (apply println %&)))
+(def Epprint  #(binding [*print-fn* *print-err-fn*] (pprint %)))
+
+(defn fatal [code & args]
+  (when (seq args)
+    (apply Eprintln args))
+  (js/process.exit code))
+
+(defn deep-merge [a b]
+  (merge-with #(cond (map? %1) (recur %1 %2)
+                     (vector? %1) (vec (concat %1 %2))
+                     (sequential? %1) (concat %1 %2)
+                     :else %2)
+              a b))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; String functions
+
 (defn snake->pascal [v]
   (S/join
     "" (for [[chr1 & chrN] (-> v .toLowerCase (S/split #"-"))]
@@ -51,24 +71,26 @@
       (S/replace #"[\n]*$" "")
       (S/replace #"(^|[\n])" (str "$1" pre))))
 
-(defn deep-merge [a b]
-  (merge-with #(cond (map? %1) (recur %1 %2)
-                     (vector? %1) (vec (concat %1 %2))
-                     (sequential? %1) (concat %1 %2)
-                     :else %2)
-              a b))
+(def INTERPOLATE-RE (js/RegExp. "[$](?:([$])|([_a-z][_a-z0-9]*)|{([_a-z][_a-z0-9]*)(?:(:?[-?])([^}]*))?}|())" "gi"))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Printing functions
+(defn interpolate [s env]
+  (.replaceAll
+    s INTERPOLATE-RE
+    (fn [_ escaped named braced sep value invalid offset groups]
+      (cond escaped "$"
+            named   (get env named "")
+            sep     (let [unset? (not (contains? env braced))
+                          unset-or-null? (empty? (get env braced nil))]
+                      (condp = sep
+                        ":-" (if unset-or-null? value (get env braced))
+                        "-"  (if unset? value (get env braced))
+                        ":?" (when unset-or-null? (throw (js/Error value)))
+                        "?"  (when unset? (throw (js/Error value)))))
+            braced (get env braced "")
+            invalid (str "$" invalid)))))
 
-(def Eprn     #(binding [*print-fn* *print-err-fn*] (apply prn %&)))
-(def Eprintln #(binding [*print-fn* *print-err-fn*] (apply println %&)))
-(def Epprint  #(binding [*print-fn* *print-err-fn*] (pprint %)))
-
-(defn fatal [code & args]
-  (when (seq args)
-    (apply Eprintln args))
-  (js/process.exit code))
+(defn interpolate-walk [o env]
+  (postwalk #(if (string? %) (interpolate % env) %) o))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -108,7 +130,7 @@
           cfg (cond
                 (re-seq #".*\.(yml|yaml)$" file)
                 (.parse (js/require "yaml") raw)
-                
+
                 (re-seq #".*\.json$" file)
                 (js/JSON.parse raw)
 

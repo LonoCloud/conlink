@@ -5,7 +5,7 @@
             [promesa.core :as P]
             [cljs-bean.core :refer [->clj ->js]]
             [conlink.util :refer [parse-opts Eprintln Epprint fatal
-                                  trim indent deep-merge
+                                  trim indent interpolate-walk deep-merge
                                   spawn read-file load-config]]
             [conlink.addrs :as addrs]
             #_["dockerode$default" :as Docker]))
@@ -135,7 +135,7 @@ Outer Options:
   (P/let [id (if id (str " (" id ")") "")
           _ (info (str "Running" id ": " cmd))
           res (P/catch (spawn cmd) #(identity %))]
-    (P/do 
+    (P/do
       (if (= 0 (:code res))
         (when (not (empty? (:stdout res)))
           (info (str "Result" id ":\n"
@@ -339,7 +339,9 @@ Outer Options:
                   true)
      _ (when (not kmod-okay?)
          (fatal 2 "bridge-mode is 'ovs', but no 'openvswitch' module loaded"))
-     net-cfg (load-configs compose-file network-file)
+     env (js->clj (js/Object.assign #js {} js/process.env))
+     net-cfg (P/-> (load-configs compose-file network-file)
+                   (interpolate-walk env))
      net-state (gen-network-state net-cfg)
      docker (docker-client opts (:docker-socket opts))
      podman (docker-client opts (:podman-socket opts))
