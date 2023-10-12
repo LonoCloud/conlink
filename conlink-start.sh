@@ -28,7 +28,7 @@ MODE=${MODE:-podman}
 IMAGE="${IMAGE:-conlink}"
 HOST_MODE=${HOST_MODE:-}
 HOST_NETWORK=${HOST_NETWORK}
-CMD="${CMD:-conlink}"
+CMD="${CMD:-/app/build/conlink.js inner}"
 NETWORK_FILE=${NETWORK_FILE:-}
 COMPOSE_FILE=${COMPOSE_FILE:-}
 
@@ -87,7 +87,7 @@ vecho "  - mount network/compose config files"
 if [ "${NETWORK_FILE}" ]; then
   network_path=/root/$(basename ${NETWORK_FILE})
   RUN_OPTS="${RUN_OPTS} -v $(readlink -f ${NETWORK_FILE}):${network_path}:ro"
-  CMD_OPTS="${CMD_OPTS} --network-file ${network_path}" ;;
+  CMD_OPTS="${CMD_OPTS} --network-file ${network_path}"
 fi
 if [ "${COMPOSE_FILE}" ]; then
   compose_path=/root/$(basename ${COMPOSE_FILE})

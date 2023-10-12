@@ -83,25 +83,24 @@ docker-compose -f examples/test2-compose.yaml exec node --index 1 ping 10.0.1.5
 
 ### test3: network config file only (no compose)
 
-In terminal 1, start a container named `ZZZ_node`:
+Start two containers named `ZZZ_node_1` and `ZZZ_node_2`.
 
 ```
-docker run -it --name=ZZZ_node --rm --cap-add NET_ADMIN --network none alpine sh
+docker run --name=ZZZ_node_1 --rm -d --network none alpine sleep 864000
+docker run --name=ZZZ_node_2 --rm -d --network none alpine sleep 864000
 ```
 
-In terminal 2, start the conlink container `ZZZ_network` that will
-setup a network configuration that is connected to the `ZZZ_node`
-container:
+Start the conlink container `ZZZ_network` that will setup a network
+configuration that is connected to the other containers:
 
 ```
-./conlink-start.sh -v --mode docker --host-mode docker --network-file examples/test3-network.yaml -- --name ZZZ_network --rm -e NETWORK_NAME=ZZZ_network -e NODE_NAME=ZZZ_node
+./conlink-start.sh -v --mode docker --host-mode docker --network-file examples/test3-network.yaml -- --name ZZZ_network --rm -e NODE_NAME_1=ZZZ_node_1 -e NODE_NAME_2=ZZZ_node_2
 ```
 
-In terminal 1, ping the `internet` namespace within the network
-configuration setup by the `conlink` container.
+In a separate terminal, ping the node 2 from node 1.
 
 ```
-ping 8.8.8.8
+docker exec -it ZZZ_node_1 ping 10.0.1.2
 ```
 
 ### test4: rootless podman with network config file
