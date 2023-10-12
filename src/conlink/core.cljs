@@ -240,6 +240,11 @@ Outer Options:
   [client cid]
   (P/-> ^obj (.inspect ^obj (.getContainer client cid)) ->clj))
 
+(defn list-containers
+  [client & [filters]]
+  (P/let [opts (if filters {:filters (json-str filters)} {})]
+    ^obj (.listContainers client (->js opts))))
+
 ;;;
 
 (defn docker-client [{:keys [error log]} path]
@@ -247,7 +252,7 @@ Outer Options:
     (P/let
       [client (Docker. #js {:socketPath path})
        ;; client is lazy so trigger it now
-       containers ^obj (.listContainers client)]
+       containers (list-containers client)]
       (log (str "Listening on " path))
       client)
     #(error "Could not start docker client on '" path "': " %)))
@@ -327,8 +332,17 @@ Outer Options:
      self-cid (get-container-id)
      self-container (when self-cid
                       (get-container docker self-cid))
-     compose-project (-> self-container
-                         :Config :Labels :com.docker.compose.project)]
+     self-labels (get-in self-container [:Config :Labels])
+     compose-project (get self-labels :com.docker.compose.project)
+     compose-workdir (get self-labels :com.docker.compose.project.working_dir)
+     label-filters (when compose-project
+                     {"label"
+                      [(str "com.docker.compose.project=" compose-project)
+                       (str "com.docker.compose.project.working_dir=" compose-workdir)]})
+     event-filters (merge
+                     {"event" ["start" "die"]}
+                     label-filters)]
+
     (swap! ctx merge {:network-config net-cfg
                       :network-state net-state
                       :docker docker
@@ -337,6 +351,7 @@ Outer Options:
                       :self-cid self-cid
                       :self-container self-container})
     (js/process.on "SIGINT" #(inner-exit-handler opts % "signal"))
+    (js/process.on "SIGTERM" #(inner-exit-handler opts % "signal"))
     (js/process.on "uncaughtException" #(inner-exit-handler opts %1 %2))
 
     (log "Bridge mode:" (get {:ovs "openvswitch" :linux "linux"} bridge-mode))
@@ -365,9 +380,9 @@ Outer Options:
       (P/all (for [client [docker podman] :when client]
                (P/let
                  [;; Listen for docker and/or podman events
-                  _ (docker-listen opts client {"event" ["start" "die"]}
+                  _ (docker-listen opts client event-filters
                                    (partial handle-event opts))
-                  containers ^obj (.listContainers client)]
+                  containers ^obj (list-containers client label-filters)]
                  ;; Generate fake events for existing containers
                  (P/all (for [container containers
                               :let [ev {:status "start"
