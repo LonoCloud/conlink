@@ -28,7 +28,7 @@ MODE=${MODE:-podman}
 IMAGE="${IMAGE:-conlink}"
 HOST_MODE=${HOST_MODE:-}
 HOST_NETWORK=${HOST_NETWORK}
-CMD="${CMD:-/app/build/conlink.js inner}"
+CMD="${CMD:-/app/build/conlink.js}"
 NETWORK_FILE=${NETWORK_FILE:-}
 COMPOSE_FILE=${COMPOSE_FILE:-}
 

@@ -43,4 +43,4 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker:/var/lib/docker
       - ./:/test
-    command: /app/build/conlink.js inner --compose-file /test/test1-compose.yaml
+    command: /app/build/conlink.js --compose-file /test/test1-compose.yaml

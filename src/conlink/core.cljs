@@ -17,15 +17,11 @@
 conlink: advanced container layer 2/3 linking/networking.
 
 Usage:
-  conlink <command> [options]
-
-Command is one of: inner or show.
+  conlink [options]
 
 General Options:
   -v, --verbose                     Show verbose output (stderr)
                                     [env: VERBOSE]
-
-Inner Options:
   --bridge-mode BRIDGE-MODE         Bridge mode (ovs or linux) to use for
                                     broadcast domains
                                     [default: ovs]
@@ -37,9 +33,14 @@ Inner Options:
                                     [default: /var/run/podman/podman.sock]
 ")
 
-(def OVS-START-CMD "/usr/share/openvswitch/scripts/ovs-ctl start --system-id=random --no-mlockall --delete-bridges")
 
-(def ctx (atom {}))
+(def OVS-START-CMD (str "/usr/share/openvswitch/scripts/ovs-ctl start"
+                        " --system-id=random --no-mlockall --delete-bridges"))
+
+(def ctx (atom {:error #(apply Eprintln "ERROR" %&)
+                :warn  #(apply Eprintln "WARNING:" %&)
+                :log   Eprintln
+                :info  list}))
 
 (defn json-str [obj]
   (js/JSON.stringify (->js obj)))
@@ -68,13 +69,13 @@ Inner Options:
   for looking up runtime status/state of those aspects of the
   configuration."
   [net-cfg]
-  (reduce (fn [c {:as l :keys [service container interface domain]}]
+  (reduce (fn [cfg {:as l :keys [service container interface domain]}]
             (assert domain (str "No domain specified for link:"
                                 (str (or container service) ":" interface)))
-            (cond-> c
-                true      (assoc-in [:domains domain :status] nil)
-                container (update-in [:containers container :links] conjv l)
-                service   (update-in [:services service :links] conjv l)))
+            (cond-> cfg
+              true      (assoc-in [:domains domain :status] nil)
+              container (update-in [:containers container :links] conjv l)
+              service   (update-in [:services service :links] conjv l)))
           {} (:links net-cfg)))
 
 (defn link-add-outer-interface
@@ -100,39 +101,42 @@ Inner Options:
                     "/" prefix)))]
     (merge link (when mac {:mac mac}) (when ip {:ip ip}))))
 
-;;; Inner commands
+;;; General commands
 
-(defn run [cmd {:keys [id info error]}]
-  (P/let [id (if id (str " (" id ")") "")
-          _ (info (str "Running" id ": " cmd))
+(defn run [cmd & [{:as opts :keys [quiet id]}]]
+  (P/let [{:keys [info error]} @ctx
+          id (if id (str " (" id ")") "")
+          _ (when (not quiet) (info (str "Running" id ": " cmd)))
           res (P/catch (spawn cmd) #(identity %))]
     (P/do
-      (if (= 0 (:code res))
-        (when (not (empty? (:stdout res)))
-          (info (str "Result" id ":\n"
-                     (indent (:stdout res) "  "))))
-        (error (str "[code: " (:code res) "]" id ":\n"
-                  (indent (:stderr res) "  "))))
+      (when (not quiet)
+        (if (= 0 (:code res))
+          (when (not (empty? (:stdout res)))
+            (info (str "Result" id ":\n"
+                       (indent (:stdout res) "  "))))
+          (error (str "[code: " (:code res) "]" id ":\n"
+                      (indent (:stderr res) "  ")))))
       res)))
 
-(defn start-ovs [opts]
-  (P/let [res (run OVS-START-CMD opts)]
+(defn start-ovs []
+  (P/let [res (run OVS-START-CMD)]
     (if (not= 0 (:code res))
       (fatal 1 (str "Failed starting OVS: " (:stderr res)))
       res)))
 
-(defn kmod-loaded? [opts kmod]
+(defn kmod-loaded? [kmod]
   (P/let [cmd (str "grep -o '^" kmod "\\>' /proc/modules")
-          res (run cmd (assoc opts :error list))]
+          res (run cmd {:quiet true})]
     (and (= 0 (:code res)) (= kmod (trim (:stdout res))))))
 
-;;; Inner link and bridge commands
+;;; Link and bridge commands
 
-(defn check-no-domain [{:as opts :keys [bridge-mode]} domain]
-  (P/let [cmd (get {:ovs (str "ovs-vsctl list-ifaces " domain)
+(defn check-no-domain [domain]
+  (P/let [{:keys [info bridge-mode]} @ctx
+          cmd (get {:ovs (str "ovs-vsctl list-ifaces " domain)
                     :linux (str "ip link show type bridge " domain)}
                    bridge-mode)
-          res (run cmd (assoc opts :error list))]
+          res (run cmd {:quiet true})]
     (if (= 0 (:code res))
       ;; TODO: maybe mark as :exists and use without cleanup
       (fatal 1 (str "Domain " domain " already exists"))
@@ -140,48 +144,53 @@ Inner Options:
         true
         (fatal 1 (str "Unable to run '" cmd "': " (:stderr res)))))))
 
-(defn domain-create [{:as opts :keys [info bridge-mode]} domain]
-  (P/let [_ (info "Creating domain/switch" domain)
+(defn domain-create [domain]
+  (P/let [{:keys [info bridge-mode]} @ctx
+          _ (info "Creating domain/switch" domain)
           cmd (get {:ovs (str "ovs-vsctl add-br " domain)
                     :linux (str "ip link add " domain " up type bridge")}
                    bridge-mode)
-          res (run cmd opts)]
+          res (run cmd)]
     (if (not= 0 (:code res))
       (fatal 1 (str "Unable to create bridge/domain " domain))
       (swap! ctx assoc-in [:network-state :domains domain :status] :created))))
 
-(defn domain-del [{:as opts :keys [error info bridge-mode]} domain]
-  (P/let [_ (info "Deleting domain/switch" domain)
+(defn domain-del [domain]
+  (P/let [{:keys [info error bridge-mode]} @ctx
+          _ (info "Deleting domain/switch" domain)
           cmd (get {:ovs (str "ovs-vsctl del-br " domain)
                     :linux (str "ip link del " domain)} bridge-mode)
-          res (run cmd opts)]
+          res (run cmd)]
     (if (not= 0 (:code res))
       (error (str "Unable to delete bridge " domain))
       (swap! ctx assoc-in [:network-state :domains domain :status] nil))))
 
-(defn domain-add-link [{:as opts :keys [error bridge-mode]} domain interface]
-  (P/let [cmd (get {:ovs (str "ovs-vsctl add-port " domain " " interface)
+(defn domain-add-link [domain interface]
+  (P/let [{:keys [error bridge-mode]} @ctx
+          cmd (get {:ovs (str "ovs-vsctl add-port " domain " " interface)
                     :linux (str "ip link set dev " interface " master " domain)}
                    bridge-mode)
-          res (run cmd opts)]
+          res (run cmd)]
     (if (not= 0 (:code res))
       (error (str "ERROR: link " interface
                   " failed to add into " domain))
       res)))
 
-(defn domain-drop-link [{:as opts :keys [error bridge-mode]} domain interface]
-  (P/let [cmd (get {:ovs (str "ovs-vsctl del-port " domain " " interface)
+(defn domain-drop-link [domain interface]
+  (P/let [{:keys [error bridge-mode]} @ctx
+          cmd (get {:ovs (str "ovs-vsctl del-port " domain " " interface)
                     :linux (str "ip link set dev " interface " nomaster")}
                    bridge-mode)
-          res (run cmd opts)]
+          res (run cmd)]
     (if (not= 0 (:code res))
       (error (str "ERROR: link " interface
                   " failed to drop from " domain))
       res)))
 
 
-(defn link-create [{:as opts :keys [error]} link inner-pid outer-pid]
-  (P/let [{:keys [interface mtu mac ip route outer-interface]} link
+(defn link-create [link inner-pid outer-pid]
+  (P/let [{:keys [error]} @ctx
+          {:keys [interface mtu mac ip route outer-interface]} link
           status-path [:network-state :links outer-interface :status]
           link-status (get-in @ctx status-path)]
     (if link-status
@@ -194,11 +203,12 @@ Inner Options:
                        " --mtu " (or mtu 9000)
                        " " interface " " outer-interface
                        " " inner-pid " " outer-pid)]
-        (run cmd (assoc opts :id outer-interface))))))
+        (run cmd {:id outer-interface})))))
 
-(defn link-del [{:as opts :keys [error]} interface]
-  (P/let [status-path [:network-state :links interface :status]
-          res (run (str "ip link del " interface) opts)]
+(defn link-del [interface]
+  (P/let [{:keys [error]} @ctx
+          status-path [:network-state :links interface :status]
+          res (run (str "ip link del " interface))]
     (if (not= 0 (:code res))
       (error (str "Could not delete " interface ": " (:stderr res)))
       (do (swap! ctx assoc-in status-path nil)
@@ -229,28 +239,30 @@ Inner Options:
 
 ;;;
 
-(defn docker-client [{:keys [error log]} path]
-  (P/catch
-    (P/let
-      [client (Docker. #js {:socketPath path})
-       ;; client is lazy so trigger it now
-       containers (list-containers client)]
-      (log (str "Listening on " path))
-      client)
-    #(error "Could not start docker client on '" path "': " %)))
+(defn docker-client [path]
+  (P/let [{:keys [error log]} @ctx]
+    (P/catch
+      (P/let
+        [client (Docker. #js {:socketPath path})
+         ;; client is lazy so trigger it now
+         containers (list-containers client)]
+        (log (str "Listening on " path))
+        client)
+      #(error "Could not start docker client on '" path "': " %))))
 
-(defn docker-listen [{:keys [error log]} client filters event-callback]
-  (P/catch
-    (P/let
-      [ev-stream ^obj (.getEvents client #js {:filters (json-str filters)})
-       _ ^obj (.on ev-stream "data"
-                   #(event-callback client (->clj (js/JSON.parse %))))]
-      ev-stream)
-    #(error "Could not start docker listener")))
+(defn docker-listen [client filters event-callback]
+  (P/let [{:keys [error log]} @ctx]
+    (P/catch
+      (P/let
+        [ev-stream ^obj (.getEvents client #js {:filters (json-str filters)})
+         _ ^obj (.on ev-stream "data"
+                     #(event-callback client (->clj (js/JSON.parse %))))]
+        ev-stream)
+      #(error "Could not start docker listener"))))
 
 
-(defn handle-event [{:as opts :keys [info log]} client {:keys [status id]}]
-  (P/let [{:keys [network-state self-pid]} @ctx
+(defn handle-event [client {:keys [status id]}]
+  (P/let [{:keys [info log network-state self-pid]} @ctx
           container (get-container client id)
           cname (->> (:Name container) (re-seq #"(.*/)?(.*)") first last)
           sname (-> container :Config :Labels :com.docker.compose.service)
@@ -273,16 +285,16 @@ Inner Options:
                    (P/do
                      (log (str "Creating link (in " domain ") "
                                oif " -> " cname ":" interface))
-                     (link-create opts link Pid self-pid)
-                     (domain-add-link opts domain oif))
+                     (link-create link Pid self-pid)
+                     (domain-add-link domain oif))
                    (P/do
                      (log (str "Deleting link (in " domain ") "
                                oif " -> " cname ":" interface))
-                     (domain-drop-link opts domain oif)
-                     (link-del opts oif)))))))))
+                     (domain-drop-link domain oif)
+                     (link-del oif)))))))))
 
-(defn inner-exit-handler [{:as opts :keys [log info]} err origin]
-  (let [{:keys [network-state]} @ctx
+(defn exit-handler [err origin]
+  (let [{:keys [log info network-state]} @ctx
         {:keys [links domains containers]} network-state
         ;; filter for :created status (ignore :exists)
         intf-names (keys (filter #(= :created (-> % val :status)) links))
@@ -293,20 +305,32 @@ Inner Options:
         (P/do
           (log (str "Removing links: " (S/join ", " intf-names)))
           (P/all (for [interface intf-names]
-                   (link-del opts interface)))))
+                   (link-del interface)))))
       (when (seq domain-names)
         (P/do
           (log (str "Removing domains/switches: " (S/join ", " domain-names)))
           (P/all (for [domain domain-names]
-                   (domain-del opts domain)))))
+                   (domain-del domain)))))
       (js/process.exit 127))))
 
-(defn inner [{:as opts :keys [log info bridge-mode network-file compose-file]}]
+
+;;;
+
+(defn main [& args]
   (P/let
-    [_ (when (and (empty? network-file) (empty? compose-file))
+    [{:as opts :keys [verbose]} (parse-opts usage args)
+     {:keys [log info]} (swap! ctx merge (when verbose {:info Eprintln}))
+     opts (merge
+            opts
+            {:bridge-mode (keyword (:bridge-mode opts))
+             :network-file (mapcat #(S/split % #":") (:network-file opts))
+             :compose-file (mapcat #(S/split % #":") (:compose-file opts))})
+     _ (when verbose (Eprintln "User options:") (Epprint opts))
+     {:keys [network-file compose-file bridge-mode]} opts
+     _ (when (and (empty? network-file) (empty? compose-file))
          (fatal 2 "either --network-file or --compose-file is required"))
      kmod-okay? (if (= :ovs bridge-mode)
-                  (kmod-loaded? opts "openvswitch")
+                  (kmod-loaded? "openvswitch")
                   true)
      _ (when (not kmod-okay?)
          (fatal 2 "bridge-mode is 'ovs', but no 'openvswitch' module loaded"))
@@ -314,8 +338,8 @@ Inner Options:
      net-cfg (P/-> (load-configs compose-file network-file)
                    (interpolate-walk env))
      net-state (gen-network-state net-cfg)
-     docker (docker-client opts (:docker-socket opts))
-     podman (docker-client opts (:podman-socket opts))
+     docker (docker-client (:docker-socket opts))
+     podman (docker-client (:podman-socket opts))
      _ (when (and (not docker) (not podman))
          (fatal 1 "Failed to start either docker or podman client/listener"))
      self-cid (get-container-id)
@@ -332,21 +356,21 @@ Inner Options:
                      {"event" ["start" "die"]}
                      label-filters)]
 
-    (swap! ctx merge {:network-config net-cfg
+    (swap! ctx merge {:bridge-mode bridge-mode
                       :network-state net-state
                       :docker docker
                       :podman podman
                       :self-pid js/process.pid
                       :self-cid self-cid
                       :self-container self-container})
-    (js/process.on "SIGINT" #(inner-exit-handler opts % "signal"))
-    (js/process.on "SIGTERM" #(inner-exit-handler opts % "signal"))
-    (js/process.on "uncaughtException" #(inner-exit-handler opts %1 %2))
+    (js/process.on "SIGINT" #(exit-handler % "signal"))
+    (js/process.on "SIGTERM" #(exit-handler % "signal"))
+    (js/process.on "uncaughtException" #(exit-handler %1 %2))
 
-    (log "Bridge mode:" (get {:ovs "openvswitch" :linux "linux"} bridge-mode))
-    (when (:verbose opts)
-      (info "Full network configuration:")
-      (Epprint net-cfg))
+    (log "Bridge mode:" (name bridge-mode))
+    (when verbose
+      (info "Starting network state:")
+      (Epprint net-state))
     (when self-cid
       (info "Detected enclosing container:" self-cid))
     (when compose-project
@@ -354,54 +378,26 @@ Inner Options:
 
     (P/do
       (when (= :ovs bridge-mode)
-        (start-ovs opts))
+        (start-ovs))
 
       ;; Check that domains/switches do not already exist
       (P/all (for [domain (-> @ctx :network-state :domains keys)]
-               (check-no-domain opts domain)))
+               (check-no-domain domain)))
       ;; Create domains/switch configs
       (P/all (for [domain (-> @ctx :network-state :domains keys)]
-               (domain-create opts domain)))
+               (domain-create domain)))
 
       (P/all (for [client [docker podman] :when client]
                (P/let
                  [;; Listen for docker and/or podman events
-                  _ (docker-listen opts client event-filters
-                                   (partial handle-event opts))
+                  _ (docker-listen client event-filters handle-event)
                   containers ^obj (list-containers client label-filters)]
                  ;; Generate fake events for existing containers
                  (P/all (for [container containers
                               :let [ev {:status "start"
                                         :from "pre-existing"
                                         :id (.-Id ^obj container)}]]
-                          (handle-event opts client ev)))))))))
-
-;;;
-
-(defn show [opts]
-  (prn :show-command)
-  true)
-
-(def COMMANDS {"inner" inner
-               "show"  show})
-
-(defn main [& args]
-  (P/let
-    [{:as opts :keys [command verbose]} (parse-opts usage args)
-     _ (when verbose (Eprintln "User options:") (Epprint opts))
-     opts (merge opts
-                 {:bridge-mode (keyword (:bridge-mode opts))
-                  :network-mode (keyword (:network-mode opts))}
-                 {:error #(apply Eprintln "ERROR" %&)
-                  :warn  #(apply Eprintln "WARNING:" %&)
-                  :log   Eprintln}
-                 (if verbose
-                   {:info Eprintln}
-                   {:info list}))
-     command-fn (get COMMANDS command)]
-
-    (when (not command-fn) (fatal 2 (str "Invalid command: " command)))
-    (command-fn opts)
-    #_(Epprint (dissoc @ctx :network-container :docker :podman))
-    nil))
-
+                          (handle-event client ev))))))
+      (Epprint (dissoc @ctx :error :warn :log :info
+                       :network-container :docker :podman :self-container))
+      nil)))

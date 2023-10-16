@@ -17,7 +17,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker:/var/lib/docker
       - ./:/test
-    command: /app/build/conlink.js inner --verbose --compose-file /test/test2-compose.yaml --network-file /test/test2-network.yaml
+    command: /app/build/conlink.js --verbose --compose-file /test/test2-compose.yaml --network-file /test/test2-network.yaml
 
   node:
     image: alpine
