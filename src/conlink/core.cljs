@@ -19,7 +19,7 @@ conlink: advanced container layer 2/3 linking/networking.
 Usage:
   conlink <command> [options]
 
-Command is one of: inner, show.
+Command is one of: inner or show.
 
 General Options:
   -v, --verbose                     Show verbose output (stderr)
@@ -46,7 +46,13 @@ Inner Options:
 
 (def conjv (fnil conj []))
 
-(defn load-configs [comp-cfgs net-cfgs]
+(defn load-configs
+  "Load network configs from a list of compose file paths and a list
+  of network config file paths. Network configs in compose files are
+  under the 'x-network' top-level key or as an 'x-network' property of
+  services. The network configs are merged together into a single
+  network configuration that is returned."
+  [comp-cfgs net-cfgs]
   (P/let [comp-cfgs (P/all (map load-config comp-cfgs))
           xnet-cfgs (mapcat #(into [(:x-network %)]
                                    (map :x-network (-> % :services vals)))
@@ -55,12 +61,18 @@ Inner Options:
           net-cfg (reduce deep-merge {} (concat xnet-cfgs net-cfgs))]
     net-cfg))
 
-(defn gen-network-state [net-cfg]
+(defn gen-network-state
+  "Generate network state/context from network configuration. This
+  restructures link configuration into top-level keys: :domains,
+  :containers, and :services that provide a more efficient structure
+  for looking up runtime status/state of those aspects of the
+  configuration."
+  [net-cfg]
   (reduce (fn [c {:as l :keys [service container interface domain]}]
             (assert domain (str "No domain specified for link:"
                                 (str (or container service) ":" interface)))
             (cond-> c
-                true (assoc-in [:domains domain :status] nil)
+                true      (assoc-in [:domains domain :status] nil)
                 container (update-in [:containers container :links] conjv l)
                 service   (update-in [:services service :links] conjv l)))
           {} (:links net-cfg)))
