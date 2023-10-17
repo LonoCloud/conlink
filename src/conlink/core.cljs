@@ -228,9 +228,13 @@ General Options:
   (P/let [[cgroup mountinfo]
           , (P/all [(read-file "/proc/self/cgroup" "utf8")
                     (read-file "/proc/self/mountinfo" "utf8")])
-          cgroups (map second (re-seq #"/docker/([^/\n]*)" cgroup))
-          containers (map second (re-seq #"/containers/([^/\n]*)" mountinfo))]
-    (first (concat cgroups containers))))
+          ;; docker
+          d-cgroups (map second (re-seq #"/docker/([^/\n]*)" cgroup))
+          ;; podman (root)
+          p-cgroups (map second (re-seq #"libpod-([^/.\n]*)" cgroup))
+          ;; general fallback
+          o-mounts (map second (re-seq #"workdir=.*/([^/]*)/work" mountinfo))]
+    (first (concat d-cgroups p-cgroups o-mounts))))
 
 (defn get-container
   [client cid]
