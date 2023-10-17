@@ -25,8 +25,12 @@ General Options:
   --bridge-mode BRIDGE-MODE         Bridge mode (ovs or linux) to use for
                                     broadcast domains
                                     [default: ovs]
-  --network-file NETWORK-FILE...    Network configuration file
-  --compose-file COMPOSE-FILE...    Docker compose file
+  --network-file NETWORK-FILE...    Network config file
+  --compose-file COMPOSE-FILE...    Docker compose file with network config
+  --compose-project NAME            Docker compose project name for resolving
+                                    link :service keys (if conlink is a
+                                    compose service then this defaults to
+                                    the current compose project name)
   --docker-socket PATH              Docker socket to listen to
                                     [default: /var/run/docker.sock]
   --podman-socket PATH              Podman socket to listen to
@@ -232,6 +236,20 @@ General Options:
   [client cid]
   (P/-> ^obj (.inspect ^obj (.getContainer client cid)) ->clj))
 
+(defn get-compose-labels
+  "Return a map of compose related container labels with the
+  'com.docker.compose.' prefix stripped off and converted to
+  keywords."
+  [container]
+  (into {}
+        (for [[k v] (get-in container [:Config :Labels])
+              :let [n (name k)]
+              :when (S/starts-with? n "com.docker.compose.")]
+          [(keyword (-> n
+                        (S/replace #"^com\.docker\.compose\." "")
+                        (S/replace #"\." "-")))
+           v])))
+
 (defn list-containers
   [client & [filters]]
   (P/let [opts (if filters {:filters (json-str filters)} {})]
@@ -262,15 +280,22 @@ General Options:
 
 
 (defn handle-event [client {:keys [status id]}]
-  (P/let [{:keys [info log network-state self-pid]} @ctx
+  (P/let [{:keys [info log network-state compose-opts self-pid]} @ctx
           container (get-container client id)
-          cname (->> (:Name container) (re-seq #"(.*/)?(.*)") first last)
-          sname (-> container :Config :Labels :com.docker.compose.service)
-          snum (-> container :Config :Labels :com.docker.compose.container-number)
-          sindex (if snum (js/parseInt snum) 1)
+          cname (->> container :Name (re-seq #"(.*/)?(.*)") first last)
           Pid (-> container :State :Pid)
+
+          clabels (get-compose-labels container)
+          svc-name (:service clabels)
+          svc-num (:container-number clabels)
+          cindex (if svc-num (js/parseInt svc-num) 1)
+          svc-match? (and (let [p (:project compose-opts)]
+                            (or (not p) (= p (:project clabels))))
+                          (let [d (:project-working_dir compose-opts)]
+                            (or (not d) (= d (:project-working_dir clabels)))))
           clinks (get-in network-state [:containers cname :links])
-          slinks (get-in network-state [:services sname :links])
+          slinks (when svc-match?
+                   (get-in network-state [:services svc-name :links]))
           links (concat clinks slinks)]
     (if (not (seq links))
       (info (str "Event: no links defined for " cname ", ignoring"))
@@ -278,8 +303,8 @@ General Options:
         (info "Event:" status cname id)
         (P/all (for [{:as link :keys [interface domain ip mac]} links
                      :let [link (-> link
-                                    (link-add-outer-interface id sindex)
-                                    (link-add-offset (dec sindex)))
+                                    (link-add-outer-interface id cindex)
+                                    (link-add-offset (dec cindex)))
                            oif (:outer-interface link)]]
                  (if (= status "start")
                    (P/do
@@ -326,7 +351,7 @@ General Options:
              :network-file (mapcat #(S/split % #":") (:network-file opts))
              :compose-file (mapcat #(S/split % #":") (:compose-file opts))})
      _ (when verbose (Eprintln "User options:") (Epprint opts))
-     {:keys [network-file compose-file bridge-mode]} opts
+     {:keys [network-file compose-file compose-project bridge-mode]} opts
      _ (when (and (empty? network-file) (empty? compose-file))
          (fatal 2 "either --network-file or --compose-file is required"))
      kmod-okay? (if (= :ovs bridge-mode)
@@ -345,24 +370,19 @@ General Options:
      self-cid (get-container-id)
      self-container (when self-cid
                       (get-container docker self-cid))
-     self-labels (get-in self-container [:Config :Labels])
-     compose-project (get self-labels :com.docker.compose.project)
-     compose-workdir (get self-labels :com.docker.compose.project.working_dir)
-     label-filters (when compose-project
-                     {"label"
-                      [(str "com.docker.compose.project=" compose-project)
-                       (str "com.docker.compose.project.working_dir=" compose-workdir)]})
-     event-filters (merge
-                     {"event" ["start" "die"]}
-                     label-filters)]
+     compose-opts (if compose-project
+                    {:project compose-project}
+                    (get-compose-labels self-container))]
 
     (swap! ctx merge {:bridge-mode bridge-mode
                       :network-state net-state
+                      :compose-opts compose-opts
                       :docker docker
                       :podman podman
                       :self-pid js/process.pid
                       :self-cid self-cid
                       :self-container self-container})
+
     (js/process.on "SIGINT" #(exit-handler % "signal"))
     (js/process.on "SIGTERM" #(exit-handler % "signal"))
     (js/process.on "uncaughtException" #(exit-handler %1 %2))
@@ -389,15 +409,16 @@ General Options:
 
       (P/all (for [client [docker podman] :when client]
                (P/let
-                 [;; Listen for docker and/or podman events
-                  _ (docker-listen client event-filters handle-event)
-                  containers ^obj (list-containers client label-filters)]
+                 [event-filter {"event" ["start" "die"]}
+                  ;; Listen for docker and/or podman events
+                  _ (docker-listen client event-filter handle-event)
+                  containers ^obj (list-containers client)]
                  ;; Generate fake events for existing containers
                  (P/all (for [container containers
                               :let [ev {:status "start"
                                         :from "pre-existing"
                                         :id (.-Id ^obj container)}]]
                           (handle-event client ev))))))
-      (Epprint (dissoc @ctx :error :warn :log :info
+      #_(Epprint (dissoc @ctx :error :warn :log :info
                        :network-container :docker :podman :self-container))
       nil)))
