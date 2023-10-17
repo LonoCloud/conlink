@@ -119,6 +119,7 @@ General Options:
             (info (str "Result" id ":\n"
                        (indent (:stdout res) "  "))))
           (error (str "[code: " (:code res) "]" id ":\n"
+                      (indent (:stdout res) "  ") "\n"
                       (indent (:stderr res) "  ")))))
       res)))
 
@@ -345,6 +346,21 @@ General Options:
 
 ;;;
 
+(defn arg-checks [{:keys [network-file compose-file]}]
+  (when (and (empty? network-file) (empty? compose-file))
+    (fatal 2 "either --network-file or --compose-file is required")))
+
+(defn state-checks [ctx-data]
+  (P/let
+    [{:keys [bridge-mode docker podman]} ctx-data
+     kmod-okay? (if (= :ovs bridge-mode)
+                  (kmod-loaded? "openvswitch")
+                  true)]
+    (when (not kmod-okay?)
+      (fatal 2 "bridge-mode is 'ovs', but no 'openvswitch' module loaded"))
+    (when (and (not docker) (not podman))
+      (fatal 1 "Failed to start either docker or podman client/listener"))))
+
 (defn main [& args]
   (P/let
     [{:as opts :keys [verbose]} (parse-opts usage args)
@@ -354,38 +370,35 @@ General Options:
             {:bridge-mode (keyword (:bridge-mode opts))
              :network-file (mapcat #(S/split % #":") (:network-file opts))
              :compose-file (mapcat #(S/split % #":") (:compose-file opts))})
+     _ (arg-checks opts)
      _ (when verbose (Eprintln "User options:") (Epprint opts))
+
      {:keys [network-file compose-file compose-project bridge-mode]} opts
-     _ (when (and (empty? network-file) (empty? compose-file))
-         (fatal 2 "either --network-file or --compose-file is required"))
-     kmod-okay? (if (= :ovs bridge-mode)
-                  (kmod-loaded? "openvswitch")
-                  true)
-     _ (when (not kmod-okay?)
-         (fatal 2 "bridge-mode is 'ovs', but no 'openvswitch' module loaded"))
      env (js->clj (js/Object.assign #js {} js/process.env))
      net-cfg (P/-> (load-configs compose-file network-file)
-                   (interpolate-walk env))
+                   (interpolate-walk env)
+                   (add-network-defaults))
      net-state (gen-network-state net-cfg)
      docker (docker-client (:docker-socket opts))
      podman (docker-client (:podman-socket opts))
-     _ (when (and (not docker) (not podman))
-         (fatal 1 "Failed to start either docker or podman client/listener"))
      self-cid (get-container-id)
      self-container (when self-cid
                       (get-container docker self-cid))
      compose-opts (if compose-project
                     {:project compose-project}
-                    (get-compose-labels self-container))]
+                    (get-compose-labels self-container))
+     ctx-data {:bridge-mode bridge-mode
+               :network-state net-state
+               :compose-opts compose-opts
+               :docker docker
+               :podman podman
+               :self-pid js/process.pid
+               :self-cid self-cid
+               :self-container self-container}]
 
-    (swap! ctx merge {:bridge-mode bridge-mode
-                      :network-state net-state
-                      :compose-opts compose-opts
-                      :docker docker
-                      :podman podman
-                      :self-pid js/process.pid
-                      :self-cid self-cid
-                      :self-container self-container})
+    (state-checks ctx-data)
+
+    (swap! ctx merge ctx-data)
 
     (js/process.on "SIGINT" #(exit-handler % "signal"))
     (js/process.on "SIGTERM" #(exit-handler % "signal"))
