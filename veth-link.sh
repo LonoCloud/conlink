@@ -25,17 +25,18 @@ usage () {
 }
 
 VERBOSE=${VERBOSE:-}
-IP0= IP1= MAC0= MAC1= PID0= PID1= ROUTE0= ROUTE1= MTU=
+IP0= IP1= MAC0= MAC1= ROUTE0= ROUTE1= MTU=
 
 info() { echo "veth-link [${PID0}/${IF0} <-> ${PID1}/${IF1}] ${*}"; }
 warn() { >&2 echo "veth-link [${PID0}/${IF0} <-> ${PID1}/${IF1}] ${*}"; }
 die () { warn "ERROR: ${*}"; exit 1; }
 
-# Set MAC, IP, and up state for interface within netns
+# Set name, MAC, IP, ROUTE, MTU, and up state for interface within netns
 setup_if() {
-  local IF=$1 NS=$2 MAC=$3 IP=$4 ROUTE=$5 MTU=$6
+  local SIF=$1 IF=$2 NS=$3 MAC=$4 IP=$5 ROUTE=$6 MTU=$7
 
   ip -netns ${NS} --force -b - <<EOF
+      link set dev ${SIF} name ${IF}
       ${IP:+addr add ${IP} dev ${IF}}
       ${MAC:+link set dev ${IF} address ${MAC}}
       ${MTU:+link set dev ${IF} mtu ${MTU}}
@@ -84,10 +85,11 @@ ln -sf /proc/${PID0}/ns/net /var/run/netns/ns${PID0}
 ln -sf /proc/${PID1}/ns/net /var/run/netns/ns${PID1}
 
 info "Creating veth pair with ends in each namespace"
-ip link add ${IF0} netns ns${PID0} type veth peer ${IF1} netns ns${PID1}
+SIF0=if0-${RANDOM} SIF1=if1-${RANDOM}
+ip link add ${SIF0} netns ns${PID0} type veth peer ${SIF1}
 
-info "Setting MAC, IP, ROUTE, MTU, and up state"
-setup_if ${IF0} ns${PID0} "${MAC0}" "${IP0}" "${ROUTE0}" "${MTU}"
-setup_if ${IF1} ns${PID1} "${MAC1}" "${IP1}" "${ROUTE1}" "${MTU}"
+info "Setting netns, name, MAC, IP, ROUTE, MTU, and up state"
+setup_if ${SIF0} ${IF0} ns${PID0} "${MAC0}" "${IP0}" "${ROUTE0}" "${MTU}"
+setup_if ${SIF1} ${IF1} ns${PID1} "${MAC1}" "${IP1}" "${ROUTE1}" "${MTU}"
 
 info "Created veth pair link (${IP0}|${MAC0} <-> ${IP1}|${MAC1})"
