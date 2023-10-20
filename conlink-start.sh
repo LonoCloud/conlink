@@ -31,6 +31,7 @@ HOST_NETWORK=${HOST_NETWORK}
 CMD="${CMD:-/app/build/conlink.js}"
 NETWORK_FILE=${NETWORK_FILE:-}
 COMPOSE_FILE=${COMPOSE_FILE:-}
+COMPOSE_PROJECT=${COMPOSE_PROJECT:-}
 
 die() { echo >&2 "${*}"; exit 1; }
 vecho() { [ "${VERBOSE}" ] && echo "${@}" || true; }
@@ -58,6 +59,7 @@ while [ "${*}" ]; do
   --host-mode) HOST_MODE="${OPTARG}"; shift ;;
   --network-file) NETWORK_FILE="${OPTARG}"; shift ;;
   --compose-file) COMPOSE_FILE="${OPTARG}"; shift ;;
+  --compose-project) CMD_OPTS="${CMD_OPTS} --compose-project ${OPTARG}"; shift ;;
   -h|--help) usage ;;
   --) shift; break ;;
   *) CMD_OPTS="${CMD_OPTS} $1" ;;
