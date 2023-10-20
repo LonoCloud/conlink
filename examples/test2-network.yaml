@@ -1,5 +1,5 @@
 links:
-  - {bridge: s1,  service: node,     dev: eth0, ip: 10.0.1.1/16, route: "default via 10.0.0.1"}
+  - {service: node,     bridge: s1,  dev: eth0, ip: 10.0.1.1/16, route: "default via 10.0.0.1"}
 
-  - {bridge: s1,  service: internet, dev: eth0, ip: 10.0.0.1/16}
-  - {type: dummy, service: internet, dev: i0,   ip: 8.8.8.8/24}
+  - {service: internet, bridge: s1,  dev: eth0, ip: 10.0.0.1/16}
+  - {service: internet, type: dummy, dev: i0,   ip: 8.8.8.8/24}

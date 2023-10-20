@@ -132,7 +132,7 @@ case "${HOST_MODE}" in
     vecho "  - adding connectivity to outer podman"
     RUN_OPTS="${RUN_OPTS} --pid host"
     HOST_SOCK_PATH=$(mktemp -u $(pwd)/podman.sock.XXXXXXXXXX)
-    RUN_OPTS="${RUN_OPTS} -v ${HOST_SOCK_PATH}:/var/run/docker.sock"
+    RUN_OPTS="${RUN_OPTS} -v ${HOST_SOCK_PATH}:/var/run/podman/podman.sock"
     ;;
   docker)
     vecho "  - adding connectivity to outer docker"

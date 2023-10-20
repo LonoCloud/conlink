@@ -1,7 +1,0 @@
-
-mininet-cfg:
-  commands:
-    - node: r0
-      command:
-        - python3 -m http.server 80 &
-

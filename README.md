@@ -43,7 +43,7 @@ docker build -t conlink .
 podman build -t conlink .
 ```
 
-### test1: compose file with embedded network config and variable templating
+### test1: compose file with embedded network config
 
 Start the test1 compose configuration:
 
@@ -86,7 +86,9 @@ docker-compose -f examples/test2-compose.yaml exec --index 5 node ping 10.0.1.1
 ```
 
 
-### test3: network config file only (no compose)
+### test3: network config file only (no compose) and variable templating
+
+#### test3 with docker
 
 Start two containers named `ZZZ_node_1` and `ZZZ_node_2`.
 
@@ -108,42 +110,94 @@ In a separate terminal, ping the node 2 from node 1.
 docker exec -it ZZZ_node_1 ping 10.0.1.2
 ```
 
-### test4: rootless podman with network config file
+#### test3 with rootless podman
 
-Pull down upstream the podman images that will be used.
+Same as test3 but using rootless podman instead
 
-```
-podman pull docker.io/library/python:3-alpine
-podman pull docker.io/library/ubuntu:20.04
-```
-
-In terminal 1, start a podman container named `ZZZ_node`:
+Start two containers named `ZZZ_node_1` and `ZZZ_node_2`.
 
 ```
-podman run -it --name=ZZZ_node --rm --cap-add NET_ADMIN --network none python:3-alpine sh
+podman run --name=ZZZ_node_1 --rm -d --network none alpine sleep 864000
+podman run --name=ZZZ_node_2 --rm -d --network none alpine sleep 864000
 ```
 
-In terminal 2, start the conlink container `ZZZ_network` that will
-setup a network configuration that is connected to the `ZZZ_node`
-container:
+Start the conlink container `ZZZ_network` that will setup a network
+configuration that is connected to the other containers:
 
 ```
-./conlink-start.sh -v --host-mode podman --network-file examples/test4-network.yaml -- --name ZZZ_network --rm -e NETWORK_NAME=ZZZ_network -e NODE_NAME=ZZZ_node
+./conlink-start.sh -v --mode podman --host-mode podman --network-file examples/test3-network.yaml -- --name ZZZ_network --rm -e NODE_NAME_1=ZZZ_node_1 -e NODE_NAME_2=ZZZ_node_2
 ```
 
-In terminal 1 (`ZZZ_node`), ping the `h4` podman container
-running inside the conlink podman container.
+In a separate terminal, ping the node 2 from node 1.
 
 ```
-ping 10.0.0.100
+podman exec -it ZZZ_node_1 ping 10.0.1.2
 ```
 
-From the `h1` host, issue an HTTP request to the web server running in
-the external `ZZZ_node` container.
+### test4: multiple compose files and container commands
+
+Docker-compose has the ability to specify multiple compose files that
+are merged together into a single runtime configuration. This test
+has conlink configuration spread across multiple compose files and
+a separate network config file. The network configuration appears at the
+top-level of the compose files and also within multiple compose
+service definitions.
+
+Run docker-compose using two compose files. The first defines the
+conlink/network container and a basic network configuration that
+includes a router and switch (`s0`). The second defines a single
+container (`node1`) and switch (`s1`) that is connected to the router
+defined in the first compose file.
 
 ```
-sudo nsenter -n -t $(pgrep -f mininet:h1) curl 10.0.0.104:84
+echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml" > .env
+docker-compose up --build --force-recreate
 ```
+
+Ping the router host from `node`:
+
+```
+docker-compose exec node1 ping 10.0.0.100
+```
+
+Restart the compose instance and add another compose file that defines
+two node2 replicas and a switch (`s2`) that is connected to the
+router.
+
+```
+echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml:examples/test4-multiple/nodes2-compose.yaml" > .env
+docker-compose up --build --force-recreate
+```
+
+From both `node2` replicas, ping `node1` across the switches and `r0` router:
+
+```
+docker-compose exec --index 1 node2 ping 10.1.0.1
+docker-compose exec --index 2 node2 ping 10.1.0.1
+```
+
+Restart the compose instance and add another compose file that starts
+conlink using an addition network file `web-network.yaml`. The network
+file starts up a simple web server on the router.
+
+```
+echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml:examples/test4-multiple/nodes2-compose.yaml:examples/test4-multiple/all-compose.yaml" > .env
+docker-compose up --build --force-recreate
+```
+
+From the second `node2`, perform a download from the web server running on the
+router host:
+
+```
+docker-compose exec --index 2 node2 wget -O- 10.0.0.100
+```
+
+Remove the `.env` file as a final cleanup step:
+
+```
+rm .env
+```
+
 
 ### test5: conlink on two hosts with overlay connectivity via geneve
 
@@ -216,63 +270,6 @@ aws --region us-west-2 cloudformation describe-stacks --stack-name ${USER}-conli
 Use ssh to connect to instance 1 and 2 (as the "ubuntu" user) and then
 use nsenter to run tcpdump and ping as described for test5.
 
-
-### test7: multiple compose files
-
-Docker-compose has the ability to specify multiple compose files that
-are merged together into a single runtime configuration. This test
-has conlink configuration spread across multiple compose files and
-a separate work config file. The network configuration appears at the
-top-level of the compose files and also within multiple compose
-service definitions.
-
-Run docker-compose using two compose files. The first defines the
-conlink/network container and a basic network configuration that
-includes a router and switch (`s0`). The second defines a single
-container (`node1`) and switch (`s1`) that is connected to the router
-defined in the first compose file.
-
-```
-COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml
-docker-compose up --build --force-recreate
-```
-
-Ping the router host from `node`:
-
-```
-docker-compose exec node1 ping 10.0.0.100
-```
-
-Restart the compose instance and add another compose file that defines
-two more containers (`node2a` and `node2b`) and a switch (`s2`) that
-is also connected to the router.
-
-```
-COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml:examples/test7-multiple/nodes2-compose.yaml
-docker-compose up --build --force-recreate
-```
-
-From `node2a`, ping `node2a` across the switches and router:
-
-```
-docker-compose exec node2a ping 10.1.0.1
-```
-
-Restart the compose instance and add another compose file that starts
-conlink using an addition network file `web-network.yaml`. The network
-file starts up a simple web server on the router.
-
-```
-COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml:examples/test7-multiple/nodes2-compose.yaml:examples/test7-multiple/all-compose.yaml
-docker-compose up --build --force-recreate
-```
-
-From `node2b`, perform a download from the web server running on the
-router host:
-
-```
-docker-compose exec node2b wget -O- 10.0.0.100
-```
 
 ### test8: VLAN and MTU settings
 

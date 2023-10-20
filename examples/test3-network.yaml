@@ -1,5 +1,5 @@
 
 links:
-  - {domain: s1, container: "${NODE_NAME_1}", interface: ext-intf, ip: 10.0.1.1/16}
-  - {domain: s1, container: "${NODE_NAME_2}", interface: ext-intf, ip: 10.0.1.2/16}
+  - {container: "${NODE_NAME_1}", bridge: s1, dev: ext-intf, ip: 10.0.1.1/16}
+  - {container: "${NODE_NAME_2}", bridge: s1, dev: ext-intf, ip: 10.0.1.2/16}
 
