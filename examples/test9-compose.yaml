@@ -11,7 +11,7 @@ services:
     image: conlink
     pid: host
     networks: []
-    privileged: true
+    privileged: true  # required for *vlan creation in root ns
     security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -13,9 +13,9 @@ version: "2.4"
 
 x-network:
   links:
-    - {domain: s1, service: h1, interface: eth0, ip: "192.168.1.${H1_INDEX:-100}/24", route: "0.0.0.0/0 via 192.168.1.1"}
-    - {domain: s2, service: h2, interface: eth0, ip: "172.16.0.${H2_INDEX:-100}/12",  route: "0.0.0.0/0 via 172.16.0.1"}
-    - {domain: s3, service: h3, interface: eth0, ip: "10.0.0.${H3_INDEX:-100}/8",     route: "0.0.0.0/0 via 10.0.0.1"}
+    - {bridge: s1, service: h1, ip: "192.168.1.${H1_INDEX:-100}/24", route: "default via 192.168.1.1"}
+    - {bridge: s2, service: h2, ip: "172.16.0.${H2_INDEX:-100}/12",  route: "default via 172.16.0.1"}
+    - {bridge: s3, service: h3, ip: "10.0.0.${H3_INDEX:-100}/8",     route: "default via 10.0.0.1"}
 
 services:
   r0:
@@ -24,9 +24,9 @@ services:
     command: "sleep 864000"
     x-network:
       links:
-        - {domain: s1, service: r0, interface: eth-s1, ip: "192.168.1.1/24"}
-        - {domain: s2, service: r0, interface: eth-s2, ip: "172.16.0.1/12"}
-        - {domain: s3, service: r0, interface: eth-s3, ip: "10.0.0.1/8"}
+        - {bridge: s1, service: r0, dev: eth-s1, ip: "192.168.1.1/24"}
+        - {bridge: s2, service: r0, dev: eth-s2, ip: "172.16.0.1/12"}
+        - {bridge: s3, service: r0, dev: eth-s3, ip: "10.0.0.1/8"}
 
   h1: {image: alpine, network_mode: none, command: "sleep 864000"}
   h2: {image: alpine, network_mode: none, command: "sleep 864000"}

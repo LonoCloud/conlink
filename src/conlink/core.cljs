@@ -23,7 +23,7 @@ General Options:
   -v, --verbose                     Show verbose output (stderr)
                                     [env: VERBOSE]
   --bridge-mode BRIDGE-MODE         Bridge mode (ovs or linux) to use for
-                                    broadcast domains
+                                    bridge/switch connections
                                     [default: ovs]
   --network-file NETWORK-FILE...    Network config file
   --compose-file COMPOSE-FILE...    Docker compose file with network config
@@ -37,11 +37,18 @@ General Options:
                                     [default: /var/run/podman/podman.sock]
 ")
 
+;; TODO: :service should require either command line option or
+;; detection of running in a compose project (but not both).
+
+;; TODO: if x-network is below a service, then default :service of
+;; that service
 
 (def OVS-START-CMD (str "/usr/share/openvswitch/scripts/ovs-ctl start"
                         " --system-id=random --no-mlockall --delete-bridges"))
 
-(def ctx (atom {:error #(apply Eprintln "ERROR" %&)
+(def VLAN-TYPES #{:vlan :macvlan :macvtap :ipvlan :ipvtap})
+
+(def ctx (atom {:error #(apply Eprintln "ERROR:" %&)
                 :warn  #(apply Eprintln "WARNING:" %&)
                 :log   Eprintln
                 :info  list}))
@@ -66,33 +73,73 @@ General Options:
           net-cfg (reduce deep-merge {} (concat xnet-cfgs net-cfgs))]
     net-cfg))
 
+(defn check-and-enrich-link
+  [{:as link :keys [type link-id base bridge ip vlanid]}]
+  (let [type (keyword (or type "veth"))
+        base-default (cond (= :veth type)     :conlink
+                           (VLAN-TYPES type)  :host
+                           :else              :local)
+        base (get link :base base-default)
+        link (merge
+               link
+               {:type type
+                :dev  (get link :dev "eth0")
+                :base base}
+               (when (not (VLAN-TYPES type))
+                 {:mtu  (get link :mtu 9000)}))]
+    (cond
+      (and (= :veth type) (= :conlink base))
+      (assert bridge
+              (str "Bridge required for conlink veth link: " link-id))
+
+      (or (not= :veth type) (not= :conlink base))
+      (assert (not bridge)
+              (str "Bridge only allowed for conlink veth links: " link-id))
+
+      ip
+      (assert (re-seq #"/" ip)
+              (str "IP " ip " is missing prefix (*/prefix): " link-id))
+
+      vlanid
+      (assert (= :vlan type)
+              (str "Non vlan link cannot have vlanid: " link-id))
+
+      (not= :vlan type)
+      (assert (not vlanid)
+              (str "vlanid is not supported for " type " link: " link-id)))
+    link))
+
+(defn check-and-enrich-network-config
+  [{:as cfg :keys [links]}]
+  (assoc cfg :links (vec (map check-and-enrich-link links))))
+
+
 (defn gen-network-state
   "Generate network state/context from network configuration. This
-  restructures link configuration into top-level keys: :domains,
+  restructures link configuration into top-level keys: :bridges,
   :containers, and :services that provide a more efficient structure
   for looking up runtime status/state of those aspects of the
   configuration."
   [net-cfg]
-  (reduce (fn [cfg {:as l :keys [service container interface domain]}]
-            (assert domain (str "No domain specified for link:"
-                                (str (or container service) ":" interface)))
+  (reduce (fn [cfg {:as l :keys [bridge container service]}]
             (cond-> cfg
-              true      (assoc-in [:domains domain :status] nil)
+              bridge    (assoc-in  [:bridges    bridge :status] nil)
               container (update-in [:containers container :links] conjv l)
-              service   (update-in [:services service :links] conjv l)))
-          {} (:links net-cfg)))
+              service   (update-in [:services   service :links] conjv l)))
+          {:bridges {} :containers {} :services {}}
+          (:links net-cfg)))
 
-(defn link-add-outer-interface
-  "outer-interface format:
-     - standalone:  container          '-' interface
-     - compose:     service '_' index  '-' interface
-     - len > 15:    'c' cid[0:8]       '-' interface[0:5]"
-  [{:as link :keys [container service interface]} cid index]
-  (let [oif (str (if service (str service "_" index) container) "-" interface)
+(defn link-outer-dev
+  "outer-dev format:
+     - standalone:  container          '-' dev
+     - compose:     service '_' index  '-' dev
+     - len > 15:    'c' cid[0:8]       '-' dev[0:5]"
+  [{:as link :keys [container service dev]} cid index]
+  (let [oif (str (if service (str service "_" index) container) "-" dev)
         oif (if (<= (count oif) 15)
               oif
-              (str "c" (.substring cid 0 8)  "-" (.substring interface 0 5)))]
-    (assoc link :outer-interface oif)))
+              (str "c" (.substring cid 0 8)  "-" (.substring dev 0 5)))]
+    oif))
 
 (defn link-add-offset [{:as link :keys [ip mac]} offset]
   (let [mac (when mac
@@ -105,10 +152,28 @@ General Options:
                     "/" prefix)))]
     (merge link (when mac {:mac mac}) (when ip {:ip ip}))))
 
+
+(defn link-enrich [link container self-pid]
+  (let [{:keys [id dev pid index name]} container
+        link-id (str name ":" (:dev link))
+        outer-pid (condp = (:base link)
+                    :conlink self-pid
+                    :host 1
+                    :local nil)
+        link (link-add-offset link (dec index))
+        link (if (and outer-pid (not (:outer-dev link)))
+               (assoc link :outer-dev (link-outer-dev link id index))
+               link)
+        link (merge link {:container container
+                          :link-id link-id
+                          :pid pid
+                          :outer-pid outer-pid})]
+    link))
+
 ;;; General commands
 
 (defn run [cmd & [{:as opts :keys [quiet id]}]]
-  (P/let [{:keys [info error]} @ctx
+  (P/let [{:keys [info warn]} @ctx
           id (if id (str " (" id ")") "")
           _ (when (not quiet) (info (str "Running" id ": " cmd)))
           res (P/catch (spawn cmd) #(identity %))]
@@ -118,9 +183,9 @@ General Options:
           (when (not (empty? (:stdout res)))
             (info (str "Result" id ":\n"
                        (indent (:stdout res) "  "))))
-          (error (str "[code: " (:code res) "]" id ":\n"
-                      (indent (:stdout res) "  ") "\n"
-                      (indent (:stderr res) "  ")))))
+          (warn (str "[code: " (:code res) "]" id ":\n"
+                     (indent (:stdout res) "  ") "\n"
+                     (indent (:stderr res) "  ")))))
       res)))
 
 (defn start-ovs []
@@ -136,88 +201,89 @@ General Options:
 
 ;;; Link and bridge commands
 
-(defn check-no-domain [domain]
+(defn check-no-bridge [bridge]
   (P/let [{:keys [info bridge-mode]} @ctx
-          cmd (get {:ovs (str "ovs-vsctl list-ifaces " domain)
-                    :linux (str "ip link show type bridge " domain)}
+          cmd (get {:ovs (str "ovs-vsctl list-ifaces " bridge)
+                    :linux (str "ip link show type bridge " bridge)}
                    bridge-mode)
           res (run cmd {:quiet true})]
     (if (= 0 (:code res))
       ;; TODO: maybe mark as :exists and use without cleanup
-      (fatal 1 (str "Domain " domain " already exists"))
+      (fatal 1 (str "Bridge " bridge " already exists"))
       (if (re-seq #"(does not exist|no bridge named)" (:stderr res))
         true
         (fatal 1 (str "Unable to run '" cmd "': " (:stderr res)))))))
 
-(defn domain-create [domain]
-  (P/let [{:keys [info bridge-mode]} @ctx
-          _ (info "Creating domain/switch" domain)
-          cmd (get {:ovs (str "ovs-vsctl add-br " domain)
-                    :linux (str "ip link add " domain " up type bridge")}
-                   bridge-mode)
-          res (run cmd)]
-    (if (not= 0 (:code res))
-      (fatal 1 (str "Unable to create bridge/domain " domain))
-      (swap! ctx assoc-in [:network-state :domains domain :status] :created))))
-
-(defn domain-del [domain]
+(defn bridge-create [bridge]
   (P/let [{:keys [info error bridge-mode]} @ctx
-          _ (info "Deleting domain/switch" domain)
-          cmd (get {:ovs (str "ovs-vsctl del-br " domain)
-                    :linux (str "ip link del " domain)} bridge-mode)
-          res (run cmd)]
-    (if (not= 0 (:code res))
-      (error (str "Unable to delete bridge " domain))
-      (swap! ctx assoc-in [:network-state :domains domain :status] nil))))
-
-(defn domain-add-link [domain interface]
-  (P/let [{:keys [error bridge-mode]} @ctx
-          cmd (get {:ovs (str "ovs-vsctl add-port " domain " " interface)
-                    :linux (str "ip link set dev " interface " master " domain)}
+          _ (info "Creating bridge/switch" bridge)
+          cmd (get {:ovs (str "ovs-vsctl add-br " bridge)
+                    :linux (str "ip link add " bridge " up type bridge")}
                    bridge-mode)
           res (run cmd)]
     (if (not= 0 (:code res))
-      (error (str "ERROR: link " interface
-                  " failed to add into " domain))
-      res)))
+      (error (str "Unable to create bridge/switch " bridge))
+      (swap! ctx assoc-in [:network-state :bridges bridge :status] :created))
+    res))
 
-(defn domain-drop-link [domain interface]
-  (P/let [{:keys [error bridge-mode]} @ctx
-          cmd (get {:ovs (str "ovs-vsctl del-port " domain " " interface)
-                    :linux (str "ip link set dev " interface " nomaster")}
-                   bridge-mode)
+(defn bridge-del [bridge]
+  (P/let [{:keys [info error bridge-mode]} @ctx
+          _ (info "Deleting bridge/switch" bridge)
+          cmd (get {:ovs (str "ovs-vsctl del-br " bridge)
+                    :linux (str "ip link del " bridge)} bridge-mode)
           res (run cmd)]
     (if (not= 0 (:code res))
-      (error (str "ERROR: link " interface
-                  " failed to drop from " domain))
-      res)))
+      (error (str "Unable to delete bridge " bridge))
+      (swap! ctx assoc-in [:network-state :bridges bridge :status] nil))
+    res))
+
+(defn bridge-add-link [bridge dev]
+  (P/let [{:keys [error bridge-mode]} @ctx
+          cmd (get {:ovs (str "ovs-vsctl add-port " bridge " " dev)
+                    :linux (str "ip link set dev " dev " master " bridge)}
+                   bridge-mode)
+          res (run cmd)]
+    (when (not= 0 (:code res))
+      (error (str "Unable to add link " dev " into " bridge)))
+    res))
+
+(defn bridge-drop-link [bridge dev]
+  (P/let [{:keys [error bridge-mode]} @ctx
+          cmd (get {:ovs (str "ovs-vsctl del-port " bridge " " dev)
+                    :linux (str "ip link set dev " dev " nomaster")}
+                   bridge-mode)
+          res (run cmd)]
+    (when (not= 0 (:code res))
+      (error (str "Unable to drop link " dev " from " bridge)))
+    res))
 
 
-(defn link-create [link inner-pid outer-pid]
+(defn link-add [link]
   (P/let [{:keys [error]} @ctx
-          {:keys [interface mtu mac ip route outer-interface]} link
-          status-path [:network-state :links outer-interface :status]
-          link-status (get-in @ctx status-path)]
-    (if link-status
-      (error (str "Link " outer-interface " already exists"))
-      (P/let [_ (swap! ctx assoc-in status-path :created)
-              cmd (str "./veth-link.sh"
-                       (when mac (str " --mac0 " mac))
-                       (when ip (str " --ip0 " ip))
-                       (when route (str " --route0 '" route "'"))
-                       " --mtu " (or mtu 9000)
-                       " " interface " " outer-interface
-                       " " inner-pid " " outer-pid)]
-        (run cmd {:id outer-interface})))))
+          {:keys [type dev outer-dev pid outer-pid container link-id]} link
+          cmd (str "./link-add.sh"
+                   " '" (name type) "' '" pid "' '" dev "'"
+                   (when outer-pid (str " --pid1 " outer-pid))
+                   (when outer-dev (str " --intf1 " outer-dev))
+                   (S/join ""
+                           (for [o [:ip :mac :route :mtu :mode :vlanid :nat]]
+                             (when-let [v (get link o)]
+                               (str " --" (name o) " '" v "'")))))
+          res (run cmd {:id link-id})]
+    (when (not= 0 (:code res))
+      (error (str "Unable to add " (name type) " " link-id)))
+    res))
 
-(defn link-del [interface]
-  (P/let [{:keys [error]} @ctx
-          status-path [:network-state :links interface :status]
-          res (run (str "ip link del " interface))]
-    (if (not= 0 (:code res))
-      (error (str "Could not delete " interface ": " (:stderr res)))
-      (do (swap! ctx assoc-in status-path nil)
-          res))))
+(defn link-del [link]
+  (P/let [{:keys [warn error]} @ctx
+          {:keys [dev pid link-id]} link
+          cmd (str "./link-del.sh " pid " " dev)
+          res (run cmd {:id link-id :quiet true})]
+    (when (not= 0 (:code res))
+      (if (re-seq #"is no longer running" (:stderr res))
+        (warn (str "Skipping delete of " link-id " (container gone)"))
+        (error (str "Unable to delete " link-id ": " (:stderr res)))))
+    res))
 
 
 ;;; docker/docker-compose utilities
@@ -284,63 +350,85 @@ General Options:
       #(error "Could not start docker listener"))))
 
 
-(defn handle-event [client {:keys [status id]}]
-  (P/let [{:keys [info log network-state compose-opts self-pid]} @ctx
-          container (get-container client id)
-          cname (->> container :Name (re-seq #"(.*/)?(.*)") first last)
-          Pid (-> container :State :Pid)
+(defn modify-link [link action]
+  (P/let
+    [{:keys [error log]} @ctx
+     {:keys [type dev outer-dev bridge ip mac link-id]} link
+     link-status (get-in @ctx [:network-state :links link-id :status])]
+    (log (str (get {"start" "Creating" "die" "Deleting"} action)
+              " " (name type) " link " link-id
+              (when ip (str " (IP " ip ")"))
+              (when outer-dev (str " <-> " outer-dev))
+              (when bridge (str " (bridge " bridge ")"))))
+    (condp = action
+      "start"
+      (if link-status
+        (error (str "Link " link-id " already exists"))
+        (P/do
+          (swap! ctx update-in [:network-state :links link-id]
+                 merge link {:status :created})
+          (link-add link)
+          (when bridge (bridge-add-link bridge outer-dev))))
 
-          clabels (get-compose-labels container)
-          svc-name (:service clabels)
-          svc-num (:container-number clabels)
-          cindex (if svc-num (js/parseInt svc-num) 1)
-          svc-match? (and (let [p (:project compose-opts)]
-                            (or (not p) (= p (:project clabels))))
-                          (let [d (:project-working_dir compose-opts)]
-                            (or (not d) (= d (:project-working_dir clabels)))))
-          clinks (get-in network-state [:containers cname :links])
-          slinks (when svc-match?
-                   (get-in network-state [:services svc-name :links]))
-          links (concat clinks slinks)]
+      "die"
+      (if (not link-status)
+        (error (str "Link " link-id " does not exist"))
+        (P/do
+          (when bridge (bridge-drop-link bridge outer-dev))
+          (link-del link)
+          (swap! ctx update-in [:network-state :links link-id]
+                 merge link {:status nil}))))))
+
+(defn handle-event [client {:keys [status id]}]
+  (P/let
+    [{:keys [info network-state compose-opts self-pid]} @ctx
+     container (get-container client id)
+     cname (->> container :Name (re-seq #"(.*/)?(.*)") first last)
+     pid (-> container :State :Pid)
+
+     clabels (get-compose-labels container)
+     svc-name (:service clabels)
+     svc-num (:container-number clabels)
+     cindex (if svc-num (js/parseInt svc-num) 1)
+     container-info {:id id
+                     :name cname
+                     :index cindex
+                     :service svc-name
+                     :pid pid
+                     :labels clabels}
+
+     svc-match? (and (let [p (:project compose-opts)]
+                       (or (not p) (= p (:project clabels))))
+                     (let [d (:project-working_dir compose-opts)]
+                       (or (not d) (= d (:project-working_dir clabels)))))
+     clinks (get-in network-state [:containers cname :links])
+     slinks (when svc-match?
+              (get-in network-state [:services svc-name :links]))
+     links (concat clinks slinks)]
     (if (not (seq links))
       (info (str "Event: no links defined for " cname ", ignoring"))
       (do
         (info "Event:" status cname id)
-        (P/all (for [{:as link :keys [interface domain ip mac]} links
-                     :let [link (-> link
-                                    (link-add-outer-interface id cindex)
-                                    (link-add-offset (dec cindex)))
-                           oif (:outer-interface link)]]
-                 (if (= status "start")
-                   (P/do
-                     (log (str "Creating link (in " domain ") "
-                               oif " -> " cname ":" interface))
-                     (link-create link Pid self-pid)
-                     (domain-add-link domain oif))
-                   (P/do
-                     (log (str "Deleting link (in " domain ") "
-                               oif " -> " cname ":" interface))
-                     (domain-drop-link domain oif)
-                     (link-del oif)))))))))
+        (P/all (for [link links
+                     :let [link (link-enrich link container-info self-pid)]]
+                 (modify-link link status)))))))
 
 (defn exit-handler [err origin]
   (let [{:keys [log info network-state]} @ctx
-        {:keys [links domains containers]} network-state
+        {:keys [links bridges containers]} network-state
         ;; filter for :created status (ignore :exists)
-        intf-names (keys (filter #(= :created (-> % val :status)) links))
-        domain-names (keys (filter #(= :created (-> % val :status)) domains))]
+        links (filter #(= :created (-> % val :status)) links)
+        bridge (filter #(= :created (-> % val :status)) bridges)]
     (info (str "Got " origin ":") err)
     (P/do
-      (when (seq intf-names)
+      (when (seq links)
         (P/do
-          (log (str "Removing links: " (S/join ", " intf-names)))
-          (P/all (for [interface intf-names]
-                   (link-del interface)))))
-      (when (seq domain-names)
+          (log (str "Removing links: " (S/join ", " (keys links))))
+          (P/all (map link-del (vals links)))))
+      (when (seq bridges)
         (P/do
-          (log (str "Removing domains/switches: " (S/join ", " domain-names)))
-          (P/all (for [domain domain-names]
-                   (domain-del domain)))))
+          (log (str "Removing bridges:" (S/join ", " (keys bridges))))
+          (P/all (map bridge-del (keys bridges)))))
       (js/process.exit 127))))
 
 
@@ -375,9 +463,11 @@ General Options:
 
      {:keys [network-file compose-file compose-project bridge-mode]} opts
      env (js->clj (js/Object.assign #js {} js/process.env))
+     self-pid js/process.pid
      net-cfg (P/-> (load-configs compose-file network-file)
                    (interpolate-walk env)
-                   (add-network-defaults))
+                   (check-and-enrich-network-config))
+
      net-state (gen-network-state net-cfg)
      docker (docker-client (:docker-socket opts))
      podman (docker-client (:podman-socket opts))
@@ -392,7 +482,7 @@ General Options:
                :compose-opts compose-opts
                :docker docker
                :podman podman
-               :self-pid js/process.pid
+               :self-pid self-pid
                :self-cid self-cid
                :self-container self-container}]
 
@@ -417,12 +507,12 @@ General Options:
       (when (= :ovs bridge-mode)
         (start-ovs))
 
-      ;; Check that domains/switches do not already exist
-      (P/all (for [domain (-> @ctx :network-state :domains keys)]
-               (check-no-domain domain)))
-      ;; Create domains/switch configs
-      (P/all (for [domain (-> @ctx :network-state :domains keys)]
-               (domain-create domain)))
+      ;; Check that bridges/switches do not already exist
+      (P/all (for [bridge (-> @ctx :network-state :bridges keys)]
+               (check-no-bridge bridge)))
+      ;; Create bridges/switch configs
+      (P/all (for [bridge (-> @ctx :network-state :bridges keys)]
+               (bridge-create bridge)))
 
       (P/all (for [client [docker podman] :when client]
                (P/let
