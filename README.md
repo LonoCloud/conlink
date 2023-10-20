@@ -17,7 +17,7 @@ a declarative configuration.
 The container to container links are created after the first process
 in the container starts executing. This means the interfaces for those
 links will not be immediately present. The container code will need to
-account for this asynchronous interface behavior. The `node2` service
+account for this asynchronous interface behavior. The `node` service
 in `examples/test2-compose.yaml` shows a simple example of a container
 command that will wait for an interface to appear before continuing
 with another command.
@@ -27,10 +27,10 @@ with another command.
 The conlink container needs to have a superset of the network related
 system capabilities of the containers that it will connect to. At
 a minimum `SYS_ADMIN` and `NET_ADMIN` are required but depending on
-what the containers require then other capabilities will also be
-required. In particular, if the container uses systemd, then it will
-likely use `SYS_NICE` and `NET_BROADCAST` and conlink will likewise
-need those capabilities.
+what the other containers require then those additional capabilities
+will also be required for the conlink container. In particular, if the
+container uses systemd, then it will likely use `SYS_NICE` and
+`NET_BROADCAST` and conlink will likewise need those capabilities.
 
 
 ## Examples

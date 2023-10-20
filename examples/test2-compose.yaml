@@ -17,13 +17,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker:/var/lib/docker
       - ./:/test
-    command: /app/build/conlink.js --verbose --compose-file /test/test2-compose.yaml --network-file /test/test2-network.yaml
+    command: /app/build/conlink.js --compose-file /test/test2-compose.yaml --network-file /test/test2-network.yaml
 
   node:
     image: alpine
     network_mode: none
     scale: 2
-    command: sleep 864000
+    command: sh -c 'while ! ip link show eth0 up; do sleep 1; done; sleep 864000'
 
   internet:
     image: alpine
