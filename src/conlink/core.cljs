@@ -127,7 +127,7 @@ General Options:
                 bridge    (assoc-in  [:bridges    bridge :status] nil)
                 container (update-in [:containers container kind] conjv x)
                 service   (update-in [:services   service kind] conjv x)))
-        state {:bridges {} :containers {} :services {}}
+        state {:links {} :bridges {} :containers {} :services {}}
         state (reduce (partial rfn :links) state (:links net-cfg))
         state (reduce (partial rfn :commands) state (:commands net-cfg))]
     state))
@@ -373,14 +373,18 @@ General Options:
         (error (str "Link " link-id " already exists"))
         (P/do
           (swap! ctx update-in [:network-state :links link-id]
-                 merge link {:status :created})
+                 merge link {:status :creating})
           (link-add link)
-          (when bridge (bridge-add-link bridge outer-dev))))
+          (when bridge (bridge-add-link bridge outer-dev))
+          (swap! ctx update-in [:network-state :links link-id]
+                 merge link {:status :created})))
 
       "die"
       (if (not link-status)
         (error (str "Link " link-id " does not exist"))
         (P/do
+          (swap! ctx update-in [:network-state :links link-id]
+                 merge link {:status :deleting})
           (when bridge (bridge-drop-link bridge outer-dev))
           (link-del link)
           (swap! ctx update-in [:network-state :links link-id]
