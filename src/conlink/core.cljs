@@ -5,7 +5,7 @@
             [clojure.pprint :refer [pprint]]
             [promesa.core :as P]
             [cljs-bean.core :refer [->clj ->js]]
-            [conlink.util :refer [parse-opts Eprintln Epprint fatal
+            [conlink.util :refer [parse-opts Eprintln fatal
                                   trim indent interpolate-walk deep-merge
                                   spawn read-file load-config]]
             [conlink.addrs :as addrs]
@@ -404,6 +404,24 @@ General Options:
               (fn [b] (log (str cname ": " (trim (.toString b "utf8"))))))
     ex))
 
+(defn all-connected-check []
+  "Output when all containers/services have been connected (at least
+  one link for each service)"
+  (let [{:keys [network-state log info]} @ctx
+        {:keys [containers services links all-connected]} network-state
+        cfg-links (concat (mapcat :links (vals containers))
+                          (mapcat :links (vals services)))
+        live-links (vals links)]
+    (when (and (not all-connected)
+               (every? #(= :created (:status %)) live-links)
+               (>= (count live-links) (count cfg-links)))
+      ;; Save all-connected to prevent scale/stop-start from
+      ;; showing this message multiple times.
+      (swap! ctx assoc-in [:network-state :all-connected] true)
+      (info (str "Ending network state:\n"
+                 (indent-pprint-str network-state "  ")))
+      (log "All links connected"))))
+
 (defn handle-event [client {:keys [status id]}]
   (P/let
     [{:keys [log info network-state compose-opts self-pid]} @ctx
@@ -440,7 +458,9 @@ General Options:
                  (modify-link link status)))
         (when (= "start" status)
           (P/all (for [{:keys [command]} commands]
-                   (exec-command cname container-obj command))))))))
+                   (exec-command cname container-obj command))))
+
+        (all-connected-check)))))
 
 (defn exit-handler [err origin]
   (let [{:keys [log info network-state]} @ctx
@@ -553,6 +573,4 @@ General Options:
                                         :from "pre-existing"
                                         :id (.-Id ^obj container)}]]
                           (handle-event client ev))))))
-      #_(Epprint (dissoc @ctx :error :warn :log :info
-                       :network-container :docker :podman :self-container))
       nil)))
