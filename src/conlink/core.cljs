@@ -436,10 +436,10 @@ General Options:
 
 (defn exit-handler [err origin]
   (let [{:keys [log info network-state]} @ctx
-        {:keys [links bridges containers]} network-state
+        {:keys [links bridges]} network-state
         ;; filter for :created status (ignore :exists)
         links (filter #(= :created (-> % val :status)) links)
-        bridge (filter #(= :created (-> % val :status)) bridges)]
+        bridges (filter #(= :created (-> % val :status)) bridges)]
     (info (str "Got " origin ":") err)
     (P/do
       (when (seq links)
