@@ -2,6 +2,7 @@
 
 (ns conlink.core
   (:require [clojure.string :as S]
+            [clojure.pprint :refer [pprint]]
             [promesa.core :as P]
             [cljs-bean.core :refer [->clj ->js]]
             [conlink.util :refer [parse-opts Eprintln Epprint fatal
@@ -54,6 +55,9 @@ General Options:
   (js/JSON.stringify (->js obj)))
 
 (def conjv (fnil conj []))
+
+(defn indent-pprint-str [o pre]
+  (indent (trim (with-out-str (pprint o))) pre))
 
 (defn load-configs
   "Load network configs from a list of compose file paths and a list
@@ -479,7 +483,7 @@ General Options:
              :network-file (mapcat #(S/split % #":") (:network-file opts))
              :compose-file (mapcat #(S/split % #":") (:compose-file opts))})
      _ (arg-checks opts)
-     _ (when verbose (Eprintln "User options:") (Epprint opts))
+     _ (info (str "User options:\n" (indent-pprint-str opts "  ")))
 
      {:keys [network-file compose-file compose-project bridge-mode]} opts
      env (js->clj (js/Object.assign #js {} js/process.env))
@@ -515,9 +519,8 @@ General Options:
     (js/process.on "uncaughtException" #(exit-handler %1 %2))
 
     (log "Bridge mode:" (name bridge-mode))
-    (when verbose
-      (info "Starting network state:")
-      (Epprint network-state))
+    (info (str "Starting network state:\n"
+               (indent-pprint-str network-state "  ")))
     (when self-cid
       (info "Detected enclosing container:" self-cid))
     (when compose-project
