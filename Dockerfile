@@ -29,4 +29,5 @@ RUN apt-get -y install libpcap-dev tcpdump iproute2 iputils-ping curl \
 COPY --from=build /app/ /app/
 ADD link-add.sh link-del.sh tun-link.sh /app/
 
+ENV PATH /app:$PATH
 WORKDIR /app

@@ -260,7 +260,7 @@ General Options:
 (defn link-add [link]
   (P/let [{:keys [error]} @ctx
           {:keys [type dev outer-dev pid outer-pid container link-id]} link
-          cmd (str "./link-add.sh"
+          cmd (str "link-add.sh"
                    " '" (name type) "' '" pid "' '" dev "'"
                    (when outer-pid (str " --pid1 " outer-pid))
                    (when outer-dev (str " --intf1 " outer-dev))
@@ -276,7 +276,7 @@ General Options:
 (defn link-del [link]
   (P/let [{:keys [warn error]} @ctx
           {:keys [dev pid link-id]} link
-          cmd (str "./link-del.sh " pid " " dev)
+          cmd (str "link-del.sh " pid " " dev)
           res (run cmd {:id link-id :quiet true})]
     (when (not= 0 (:code res))
       (if (re-seq #"is no longer running" (:stderr res))
