@@ -14,13 +14,15 @@ a declarative configuration.
 
 ### Asynchronous startup
 
-The container to container links are created after the first process
-in the container starts executing. This means the interfaces for those
-links will not be immediately present. The container code will need to
-account for this asynchronous interface behavior. The `node` service
-in `examples/test2-compose.yaml` shows a simple example of a container
-command that will wait for an interface to appear before continuing
-with another command.
+The conlink managed container links are created after the main process
+in the container starts executing. This is different from normal
+docker behavior where the interfaces are created and configured before
+the main process starts. This means the interfaces for those
+links will not be immediately present and the container process will
+need to account for this asynchronous interface behavior. The `node`
+service in `examples/test2-compose.yaml` shows a simple example of
+a container command that will wait for an interface to appear before
+continuing with another command.
 
 ### System Capabilities/Permissions
 

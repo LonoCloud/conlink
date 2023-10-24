@@ -51,6 +51,7 @@ General Options:
                 :log   Eprintln
                 :info  list}))
 
+;; Simple utility functions
 (defn json-str [obj]
   (js/JSON.stringify (->js obj)))
 
@@ -58,6 +59,8 @@ General Options:
 
 (defn indent-pprint-str [o pre]
   (indent (trim (with-out-str (pprint o))) pre))
+
+
 
 (defn load-configs
   "Load network configs from a list of compose file paths and a list
@@ -79,7 +82,13 @@ General Options:
           net-cfg (reduce deep-merge {} (concat xnet-cfgs net-cfgs))]
     net-cfg))
 
-(defn check-and-enrich-link
+(defn validate-and-enrich-link
+  "Check links for invalid configuration and add default values. Exit
+  if config is invalid. The following defaults are added:
+    - type: veth
+    - dev: eth0
+    - mtu: 9000 (for non *vlan type)
+    - base: :conlink for veth type, :host for *vlan types, :local otherwise"
   [{:as link :keys [type base bridge ip vlanid]}]
   (let [type (keyword (or type "veth"))
         base-default (cond (= :veth type)     :conlink
@@ -110,27 +119,32 @@ General Options:
       (fatal 2 (str "vlanid is not supported for " type " link: " link)))
     link))
 
-(defn check-and-enrich-network-config
-  [{:as cfg :keys [links]}]
-  (assoc cfg :links (vec (map check-and-enrich-link links))))
+(defn validate-and-enrich-network-config
+  "Validate and update each link (validate-and-enrich-link) and add
+  :containers and :services maps with restructured link and command
+  configuration to provide a more efficient structure for looking up
+  configuration later."
+  [{:as cfg :keys [links commands]}]
+  (let [links (vec (map validate-and-enrich-link links))
+        cfg (merge cfg {:links links :containers {} :services {}})
+        rfn (fn [kind cfg {:as x :keys [container service]}]
+              (cond-> cfg
+                container (update-in [:containers container kind] conjv x)
+                service   (update-in [:services   service kind] conjv x)))
+        cfg (reduce (partial rfn :links) cfg links)
+        cfg (reduce (partial rfn :commands) cfg commands)]
+    cfg))
 
 
 (defn gen-network-state
-  "Generate network state/context from network configuration. This
-  restructures link configuration into top-level keys: :bridges,
-  :containers, and :services that provide a more efficient structure
-  for looking up runtime status/state of those aspects of the
-  configuration."
-  [net-cfg]
-  (let [rfn (fn [kind cfg {:as x :keys [bridge container service]}]
-              (cond-> cfg
-                bridge    (assoc-in  [:bridges    bridge :status] nil)
-                container (update-in [:containers container kind] conjv x)
-                service   (update-in [:services   service kind] conjv x)))
-        state {:links {} :bridges {} :containers {} :services {}}
-        state (reduce (partial rfn :links) state (:links net-cfg))
-        state (reduce (partial rfn :commands) state (:commands net-cfg))]
-    state))
+  "Generate network state/context from network configuration. Adds
+  empty :links map and :bridges map containing nil status for each
+  bridge mentioned in the network config :links."
+  [{:keys [links]}]
+  (reduce (fn [state bridge]
+            (assoc-in state [:bridges bridge :status] nil))
+          {:links {} :bridges {}}
+          (keep :bridge links)))
 
 (defn link-outer-dev
   "outer-dev format:
@@ -144,7 +158,12 @@ General Options:
               (str "c" (.substring cid 0 8)  "-" (.substring dev 0 5)))]
     oif))
 
-(defn link-add-offset [{:as link :keys [ip mac]} offset]
+(defn link-add-offset
+  "Add offset value to ip and mac keys in a link definition to account
+  for multiple instances of that link i.e. a compose service with
+  multiple replicas (scale >= 2)."
+  [{:as link :keys [ip mac]} offset]
+  ;; TODO: add vlanid
   (let [mac (when mac
               (addrs/int->mac
                 (+ offset (addrs/mac->int mac))))
@@ -156,7 +175,17 @@ General Options:
     (merge link (when mac {:mac mac}) (when ip {:ip ip}))))
 
 
-(defn link-enrich [link container self-pid]
+(defn link-instance-enrich
+  "Add/update properties of a specific runtime link instance using the
+  container properties from an event and the current pid of the
+  network container. Updates iterable properties of the link
+  (via link-add-offset) and adds the following keys:
+  - :container - the container properties (passed in)
+  - :outer-pid - PID of the network namespace (passed in)
+  - :pid - PID of this container
+  - :link-id - container name + container interface name
+  - :outer-dev - outer interface name for veth and *vlan link types"
+  [link container self-pid]
   (let [{:keys [id dev pid index name]} container
         link-id (str name ":" (:dev link))
         outer-pid (condp = (:base link)
@@ -175,7 +204,12 @@ General Options:
 
 ;;; General commands
 
-(defn run [cmd & [{:as opts :keys [quiet id]}]]
+(defn run
+  "Run/spawn a shell command with result logging. If :quiet is not set
+  then print indented results (success to stdout, failure to stderr).
+  If :id is set then it will be included in the results. Returns
+  command result (whether failure or success)."
+  [cmd & [{:as opts :keys [quiet id]}]]
   (P/let [{:keys [info warn]} @ctx
           id (if id (str " (" id ")") "")
           _ (when (not quiet) (info (str "Running" id ": " cmd)))
@@ -191,20 +225,29 @@ General Options:
                      (indent (:stderr res) "  ")))))
       res)))
 
-(defn start-ovs []
+(defn start-ovs
+  "Start and initialize the openvswitch daemons. Exit with error if it
+  can't be started."
+  []
   (P/let [res (run OVS-START-CMD)]
     (if (not= 0 (:code res))
       (fatal 1 (str "Failed starting OVS: " (:stderr res)))
       res)))
 
-(defn kmod-loaded? [kmod]
+(defn kmod-loaded?
+  "Return whether kernel module 'kmod' is loaded."
+  [kmod]
   (P/let [cmd (str "grep -o '^" kmod "\\>' /proc/modules")
           res (run cmd {:quiet true})]
     (and (= 0 (:code res)) (= kmod (trim (:stdout res))))))
 
 ;;; Link and bridge commands
 
-(defn check-no-bridge [bridge]
+(defn check-no-bridge
+  "Check that no bridge named 'bridge' is currently configured.
+  Bridge type is dependent on bridge-mode (:ovs or :linux). Exit with
+  error if the bridge already exists."
+  [bridge]
   (P/let [{:keys [info bridge-mode]} @ctx
           cmd (get {:ovs (str "ovs-vsctl list-ifaces " bridge)
                     :linux (str "ip link show type bridge " bridge)}
@@ -217,7 +260,10 @@ General Options:
         true
         (fatal 1 (str "Unable to run '" cmd "': " (:stderr res)))))))
 
-(defn bridge-create [bridge]
+(defn bridge-create
+  "Create a bridge named 'bridge'.
+  Bridge type is dependent on bridge-mode (:ovs or :linux)."
+  [bridge]
   (P/let [{:keys [info error bridge-mode]} @ctx
           _ (info "Creating bridge/switch" bridge)
           cmd (get {:ovs (str "ovs-vsctl add-br " bridge)
@@ -229,7 +275,10 @@ General Options:
       (swap! ctx assoc-in [:network-state :bridges bridge :status] :created))
     res))
 
-(defn bridge-del [bridge]
+(defn bridge-del
+  "Delete the bridge named 'bridge'.
+  Bridge type is dependent on bridge-mode (:ovs or :linux)."
+  [bridge]
   (P/let [{:keys [info error bridge-mode]} @ctx
           _ (info "Deleting bridge/switch" bridge)
           cmd (get {:ovs (str "ovs-vsctl del-br " bridge)
@@ -240,7 +289,10 @@ General Options:
       (swap! ctx assoc-in [:network-state :bridges bridge :status] nil))
     res))
 
-(defn bridge-add-link [bridge dev]
+(defn bridge-add-link
+  "Add the link/interface 'dev' to the bridge 'bridge'.
+  Bridge type is dependent on bridge-mode (:ovs or :linux)."
+  [bridge dev]
   (P/let [{:keys [error bridge-mode]} @ctx
           cmd (get {:ovs (str "ovs-vsctl add-port " bridge " " dev)
                     :linux (str "ip link set dev " dev " master " bridge)}
@@ -250,7 +302,10 @@ General Options:
       (error (str "Unable to add link " dev " into " bridge)))
     res))
 
-(defn bridge-drop-link [bridge dev]
+(defn bridge-drop-link
+  "Remove the link/interface 'dev' from the bridge 'bridge'.
+  Bridge type is dependent on bridge-mode (:ovs or :linux)."
+  [bridge dev]
   (P/let [{:keys [error bridge-mode]} @ctx
           cmd (get {:ovs (str "ovs-vsctl del-port " bridge " " dev)
                     :linux (str "ip link set dev " dev " nomaster")}
@@ -261,7 +316,11 @@ General Options:
     res))
 
 
-(defn link-add [link]
+(defn link-add
+  "Create a link/interface defined by 'link' in a container by calling
+  the 'link-add.sh' script. This function just marshalls the command
+  line arguments from the 'link' definition and reports the results."
+  [link]
   (P/let [{:keys [error]} @ctx
           {:keys [type dev outer-dev pid outer-pid container link-id]} link
           cmd (str "link-add.sh"
@@ -277,7 +336,11 @@ General Options:
       (error (str "Unable to add " (name type) " " link-id)))
     res))
 
-(defn link-del [link]
+(defn link-del
+  "Delete a link/interface defined by 'link' in a container by calling
+  the 'link-del.sh' script. This function just marshalls the command
+  line arguments from the 'link' definition and reports the results."
+  [link]
   (P/let [{:keys [warn error]} @ctx
           {:keys [dev pid link-id]} link
           cmd (str "link-del.sh " pid " " dev)
@@ -292,7 +355,8 @@ General Options:
 ;;; docker/docker-compose utilities
 
 (defn get-container-id
-  "Returns nil if no container ID can be determined (e.g. we are not
+  "Determine and return our docker or podman container ID. Returns nil
+  if no container ID can be determined (e.g. we are probably not
   running in a container)"
   []
   (P/let [[cgroup mountinfo]
@@ -306,11 +370,21 @@ General Options:
           o-mounts (map second (re-seq #"containers/([^/]{64})/.*/etc/hosts" mountinfo))]
     (first (concat d-cgroups p-cgroups o-mounts))))
 
+(defn list-containers
+  "Return a sequence of container objects optionally limited to those
+  matching filters in 'filters'."
+  [client & [filters]]
+  (P/let [opts (if filters {:filters (json-str filters)} {})]
+    ^obj (.listContainers client (->js opts))))
+
 (defn get-container
+  "Return a dockerode container object with container ID 'cid'."
   [client cid]
   ^obj (.getContainer client cid))
 
 (defn inspect-container
+  "Return a map of inspected container properties for the 'container'
+  container object."
   [container]
   (P/-> ^obj (.inspect container) ->clj))
 
@@ -328,14 +402,12 @@ General Options:
                         (S/replace #"\." "-")))
            v])))
 
-(defn list-containers
-  [client & [filters]]
-  (P/let [opts (if filters {:filters (json-str filters)} {})]
-    ^obj (.listContainers client (->js opts))))
-
 ;;;
 
-(defn docker-client [path]
+(defn docker-client
+  "Return a docker/dockerode client object for the docker/podman
+  server listening at 'path'."
+  [path]
   (P/let [{:keys [error log]} @ctx]
     (P/catch
       (P/let
@@ -346,7 +418,10 @@ General Options:
         client)
       #(error "Could not start docker client on '" path "': " %))))
 
-(defn docker-listen [client filters event-callback]
+(defn docker-listen
+  "Listen for docker events from 'client' that match filter 'filters'.
+  Calls 'event-callback' function with each decoded event map."
+  [client filters event-callback]
   (P/let [{:keys [error log]} @ctx]
     (P/catch
       (P/let
@@ -357,11 +432,19 @@ General Options:
       #(error "Could not start docker listener"))))
 
 
-(defn modify-link [link action]
+(defn modify-link
+  "Depending on 'action' create ('start') or delete ('die') a link
+  defined by 'link'. veth type links will also be added to the local
+  bridge defined in the link. The network-state for this link will be
+  updated to either :creating or :deleting before any action is taken.
+  Once the async commands complete, the state will be updated to
+  either :created or nil."
+  [link action]
   (P/let
     [{:keys [error log]} @ctx
      {:keys [type dev outer-dev bridge ip mac link-id]} link
-     link-status (get-in @ctx [:network-state :links link-id :status])]
+     status-path [:network-state :links link-id :status]
+     link-status (get-in @ctx status-path)]
     (log (str (get {"start" "Creating" "die" "Deleting"} action)
               " " (name type) " link " link-id
               (when ip (str " (IP " ip ")"))
@@ -372,25 +455,26 @@ General Options:
       (if link-status
         (error (str "Link " link-id " already exists"))
         (P/do
-          (swap! ctx update-in [:network-state :links link-id]
-                 merge link {:status :creating})
+          (swap! ctx assoc-in status-path :creating)
           (link-add link)
           (when bridge (bridge-add-link bridge outer-dev))
-          (swap! ctx update-in [:network-state :links link-id]
-                 merge link {:status :created})))
+          (swap! ctx assoc-in status-path :created)))
 
       "die"
       (if (not link-status)
         (error (str "Link " link-id " does not exist"))
         (P/do
-          (swap! ctx update-in [:network-state :links link-id]
-                 merge link {:status :deleting})
+          (swap! ctx assoc-in status-path :deleting)
           (when bridge (bridge-drop-link bridge outer-dev))
           (link-del link)
-          (swap! ctx update-in [:network-state :links link-id]
-                 merge link {:status nil}))))))
+          (swap! ctx assoc-in status-path nil))))))
 
-(defn exec-command [cname container command]
+(defn exec-command
+  "Exec a command 'command' in the container named 'cname' using the
+  'container' object. If 'command' is a string then call the command
+  using 'sh -c'. Every line of output from the command is prefixed
+  with 'cname' and printed to stdout."
+  [cname container command]
   (P/let [{:keys [error log]} @ctx
           cmd (if (string? command)
                 ["sh", "-c", command]
@@ -401,14 +485,19 @@ General Options:
                                      :AttachStderr true}))
           stream (.start ex)]
     ^obj (.on stream "data"
-              (fn [b] (log (str cname ": " (trim (.toString b "utf8"))))))
+              (fn [b] (log (str "  " cname ": " (trim (.toString b "utf8"))))))
     ex))
 
-(defn all-connected-check []
-  "Output when all containers/services have been connected (at least
-  one link for each service)"
-  (let [{:keys [network-state log info]} @ctx
-        {:keys [containers services links all-connected]} network-state
+(defn all-connected-check
+  "Check if all containers/services have been connected (at least one
+  link for each service) and if so, output the ending network state (if
+  verbose) and the message 'All links connected'. This will only fire
+  once. Caveat: can fire early depending on the service replica/scale
+  counts."
+  []
+  (let [{:keys [network-config network-state log info]} @ctx
+        {:keys [containers services]} network-config
+        {:keys [links all-connected]} network-state
         cfg-links (concat (mapcat :links (vals containers))
                           (mapcat :links (vals services)))
         live-links (vals links)]
@@ -422,9 +511,15 @@ General Options:
                  (indent-pprint-str network-state "  ")))
       (log "All links connected"))))
 
-(defn handle-event [client {:keys [status id]}]
+(defn handle-event
+  "Handle a docker/podman container event. Match the event to
+  a container or service network definition (if any), then create all
+  the links for that container and then run any commmands defined for
+  the container. Finally call all-connected-check to check and notify
+  if all containers/services are connected."
+  [client {:keys [status id]}]
   (P/let
-    [{:keys [log info network-state compose-opts self-pid]} @ctx
+    [{:keys [log info network-config network-state compose-opts self-pid]} @ctx
      container-obj (get-container client id)
      container (inspect-container container-obj)
      cname (->> container :Name (re-seq #"(.*/)?(.*)") first last)
@@ -445,8 +540,8 @@ General Options:
                        (or (not p) (= p (:project clabels))))
                      (let [d (:project-working_dir compose-opts)]
                        (or (not d) (= d (:project-working_dir clabels)))))
-     containers (get-in network-state [:containers cname])
-     services (when svc-match?  (get-in network-state [:services svc-name]))
+     containers (get-in network-config [:containers cname])
+     services (when svc-match? (get-in network-config [:services svc-name]))
      links (concat (:links containers) (:links services))
      commands (concat (:commands containers) (:commands services))]
     (if (and (not (seq links)) (not (seq commands)))
@@ -454,7 +549,8 @@ General Options:
       (P/do
         (info "Event:" status cname id)
         (P/all (for [link links
-                     :let [link (link-enrich link container-info self-pid)]]
+                     :let [link (link-instance-enrich
+                                  link container-info self-pid)]]
                  (modify-link link status)))
         (when (= "start" status)
           (P/all (for [{:keys [command]} commands]
@@ -462,7 +558,10 @@ General Options:
 
         (all-connected-check)))))
 
-(defn exit-handler [err origin]
+(defn exit-handler
+  "When the process is exiting, delete all links and bridges that are
+  currently configured (have :created status)."
+  [err origin]
   (let [{:keys [log info network-state]} @ctx
         {:keys [links bridges]} network-state
         ;; filter for :created status (ignore :exists)
@@ -483,21 +582,41 @@ General Options:
 
 ;;;
 
-(defn arg-checks [{:keys [network-file compose-file]}]
+(defn arg-checks
+  "Check command line arguments. Exit with error if arguments are
+  invalid."
+  [{:keys [network-file compose-file]}]
   (when (and (empty? network-file) (empty? compose-file))
     (fatal 2 "either --network-file or --compose-file is required")))
 
-(defn startup-checks [bridge-mode docker podman]
+(defn startup-checks
+  "Check startup state and exit if openvswitch kernel module is not
+  loaded or if no docker or podman connection could be established."
+  [bridge-mode docker podman]
   (P/let
     [kmod-okay? (if (= :ovs bridge-mode)
                   (kmod-loaded? "openvswitch")
                   true)]
     (when (not kmod-okay?)
-      (fatal 2 "bridge-mode is 'ovs', but no 'openvswitch' module loaded"))
+      (fatal 1 "bridge-mode is 'ovs', but no 'openvswitch' module loaded"))
     (when (and (not docker) (not podman))
       (fatal 1 "Failed to start either docker or podman client/listener"))))
 
-(defn main [& args]
+(defn main
+  "Process:
+    - parse/validate command line options
+    - load/combine/mangle/validate network configuration
+    - connect to docker and/or podman server
+    - determine our own container ID and compose properties (if any)
+    - generate runtime network state and other process context/state
+    - install exit/cleanup handlers
+    - start/init openvswitch daemons/config (if :ovs bridge-mode)
+    - check that any defined bridges do not already exist
+    - create any bridges defined in network config links
+    - start listening/handling docker/podman container events
+    - list/handle any already running containers that match the config
+    "
+  [& args]
   (P/let
     [{:as opts :keys [verbose]} (parse-opts usage args)
      {:keys [log info]} (swap! ctx merge (when verbose {:info Eprintln}))
@@ -512,11 +631,10 @@ General Options:
      {:keys [network-file compose-file compose-project bridge-mode]} opts
      env (js->clj (js/Object.assign #js {} js/process.env))
      self-pid js/process.pid
-     net-cfg (P/-> (load-configs compose-file network-file)
-                   (interpolate-walk env)
-                   (check-and-enrich-network-config))
+     network-config (P/-> (load-configs compose-file network-file)
+                          (interpolate-walk env)
+                          (validate-and-enrich-network-config))
 
-     network-state (gen-network-state net-cfg)
      docker (docker-client (:docker-socket opts))
      podman (docker-client (:podman-socket opts))
      _ (startup-checks bridge-mode docker podman)
@@ -527,7 +645,9 @@ General Options:
      compose-opts (if compose-project
                     {:project compose-project}
                     (get-compose-labels self-container))
+     network-state (gen-network-state network-config)
      ctx-data {:bridge-mode bridge-mode
+               :network-config network-config
                :network-state network-state
                :compose-opts compose-opts
                :docker docker
@@ -543,6 +663,8 @@ General Options:
     (js/process.on "uncaughtException" #(exit-handler %1 %2))
 
     (log "Bridge mode:" (name bridge-mode))
+    (info (str "Starting network config\n"
+               (indent-pprint-str network-config "  ")))
     (info (str "Starting network state:\n"
                (indent-pprint-str network-state "  ")))
     (when self-cid
