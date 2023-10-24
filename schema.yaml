@@ -1,138 +1,50 @@
-links:
-  type: list
-  schema:
-    type: dict
-    schema:
-      left:
-        type: dict
-        required: true
-        schema:
-          container: {type: string, required: true}
-          intf:      {type: string, required: true}
-          ip:        {type: string, required: false,
-                      regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
-          mac:       {type: string, required: false,
-                      regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
-      right:
-        type: dict
-        required: true
-        schema:
-          container: {type: string, required: true}
-          intf:      {type: string, required: true}
-          ip:        {type: string, required: false,
-                      regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
-          mac:       {type: string, required: false,
-                      regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
+type: object
+additionalProperties: false
+required: ["links"]
+properties:
+  links:
+    type: array
+    items:
+      type: object
+      oneOf: [{required: ["container"]},
+              {required: ["service"]}]
 
-tunnels:
-  type: list
-  schema:
-    type: dict
-    schema:
-      type:      {type: string, required: true}
-      intf:      {type: string, required: true}
-      vni:       {type: number, required: true}
-      remote:    {type: string, required: true,
-                  regex: '([0-9]+\.){3}[0-9]+'}
-      ip:        {type: string, required: false,
-                  regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
-      mac:       {type: string, required: false,
-                  regex: '([0-9A-Fa-f][0-9A-Fa-f]:){5}[0-9A-Fa-f][0-9A-Fa-f]'}
-      link_args: {type: string, required: false}
+      if:   {properties: {type: {const: "veth"}}}
+      then:
+        allOf:
+          - {required: ["bridge"]}
+          - {not: {required: ["vlanid"]}}
+      else:
+        not: {required: ["bridge"]}
+        if:   {properties: {type: {const: "vlan"}}}
+        then: {required: ["vlanid"]}
+        else: {not: {required: ["vlanid"]}}
 
-interfaces:
-  type: list
-  schema:
-    type: dict
-    required: true
-    schema:
-      type:      {type: string, required: true,
-                  allowed: [link, vlan, macvlan, macvtap, ipvlan, ipvtap]}
-      container: {type: string, required: true}
-      host-intf: {type: string, required: true}
-      intf:      {type: string, required: true}
-      mode:      {type: string, required: false,
-                  dependencies: {type: [macvlan, macvtap, ipvlan, ipvtap]}}
-      vlanid:    {type: number, required: false,
-                  dependencies: {type: [vlan]}}
-      ip:        {type: string, required: false,
-                  regex: '([0-9]+\.){3}[0-9]+\/[0-9]+'}
-      nat:       {type: string, required: false,
-                  regex: '([0-9]+\.){3}[0-9]+',
-                  dependencies: ip}
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          default: "veth"
+          enum: [veth, dummy, vlan, ipvlan, ipvtap, macvlan, macvtap]
+        service:   {type: string}
+        container: {type: string}
+        bridge:    {type: string}
+        dev:       {type: string, default: "eth0"}
+        ip:        {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+/[0-9]*$"}
+        mac:       {type: string, pattern: "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"}
+        mtu:       {type: number}
+        route:     {type: string}
+        vlanid:    {type: number}
+        nat:       {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+/[0-9]*$"}
 
-network-settings: {type: string}
-
-commands:
-  type: list
-  schema:
-    type: dict
-    schema:
-      container: {type: string, required: true}
-      command:
-        required: true
-        oneof: [ {type: string}, {type: list, schema: {type: string}} ]
-
-mininet-cfg:
-  type: dict
-  schema:
-
-    switches:
-      type: list
-      required: false
-      schema:
-        type: dict
-        schema:
-          name: {type: string, required: true}
-          opts: {type: dict,   required: false}
-
-    hosts:
-      type: list
-      required: false
-      schema:
-        type: dict
-        schema:
-          name: {type: string, required: true}
-          opts: {type: dict,   required: false}
-
-    containers:
-      type: list
-      required: false
-      schema:
-        type: dict
-        schema:
-          name: {type: string, required: true}
-          opts: {type: dict,   required: false}
-
-    links:
-      type: list
-      required: false
-      schema:
-        type: dict
-        schema:
-          left:  {type: string, required: true}
-          right: {type: string, required: true}
-          opts:  {type: dict,   required: false}
-
-    interfaces:
-      type: list
-      required: false
-      schema:
-        type: dict
-        schema:
-          node:     {type: string, required: true}
-          name:     {type: string, required: true}
-          origName: {type: string, required: false}
-          opts:     {type: dict,   required: false}
-
-    commands:
-      type: list
-      required: false
-      schema:
-        type: dict
-        schema:
-          node: {type: string,  required: true}
-          sync: {type: boolean, required: false}
-          command:
-            required: true
-            oneof: [ {type: string}, {type: list, schema: {type: string}} ]
+  commands:
+    type: array
+    items:
+      type: object
+      required: ["command"]
+      oneOf: [{required: ["container"]},
+              {required: ["service"]}]
+      properties:
+        service:   {type: string}
+        container: {type: string}
+        command:   {type: string}

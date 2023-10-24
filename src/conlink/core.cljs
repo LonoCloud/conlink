@@ -9,9 +9,11 @@
                                   trim indent interpolate-walk deep-merge
                                   spawn read-file load-config]]
             [conlink.addrs :as addrs]
+            #_["ajv$default" :as Ajv]
             #_["dockerode$default" :as Docker]))
 
 ;; TODO: use require syntax when shadow-cljs works with "*$default"
+(def Ajv (js/require "ajv"))
 (def Docker (js/require "dockerode"))
 
 (def usage "
@@ -32,6 +34,8 @@ General Options:
                                     link :service keys (if conlink is a
                                     compose service then this defaults to
                                     the current compose project name)
+  --config-schema SCHEMA-FILE       JSON schema file for validating network config
+                                    [default: schema.yaml]
   --docker-socket PATH              Docker socket to listen to
                                     [default: /var/run/docker.sock]
   --podman-socket PATH              Podman socket to listen to
@@ -82,9 +86,8 @@ General Options:
           net-cfg (reduce deep-merge {} (concat xnet-cfgs net-cfgs))]
     net-cfg))
 
-(defn validate-and-enrich-link
-  "Check links for invalid configuration and add default values. Exit
-  if config is invalid. The following defaults are added:
+(defn enrich-link
+  "Add default values to a link:
     - type: veth
     - dev: eth0
     - mtu: 9000 (for non *vlan type)
@@ -102,30 +105,15 @@ General Options:
                 :base base}
                (when (not (VLAN-TYPES type))
                  {:mtu  (get link :mtu 9000)}))]
-    (cond
-      (and (not bridge) (= :veth type) (= :conlink base))
-      (fatal 2 (str "Bridge required for conlink veth link: " link))
-
-      (and bridge (or (not= :veth type) (not= :conlink base)))
-      (fatal 2 (str "Bridge only allowed for conlink veth links: " link))
-
-      (and ip (not (re-seq #"/" ip)))
-      (fatal 2 (str "IP " ip " is missing prefix (*/prefix): " link))
-
-      (and vlanid (not= :vlan type))
-      (fatal 2 (str "Non vlan link cannot have vlanid: " link))
-
-      (and vlanid (not= :vlan type))
-      (fatal 2 (str "vlanid is not supported for " type " link: " link)))
     link))
 
-(defn validate-and-enrich-network-config
-  "Validate and update each link (validate-and-enrich-link) and add
+(defn enrich-network-config
+  "Validate and update each link (enrich-link) and add
   :containers and :services maps with restructured link and command
   configuration to provide a more efficient structure for looking up
   configuration later."
   [{:as cfg :keys [links commands]}]
-  (let [links (vec (map validate-and-enrich-link links))
+  (let [links (vec (map enrich-link links))
         cfg (merge cfg {:links links :containers {} :services {}})
         rfn (fn [kind cfg {:as x :keys [container service]}]
               (cond-> cfg
@@ -135,6 +123,28 @@ General Options:
         cfg (reduce (partial rfn :commands) cfg commands)]
     cfg))
 
+(defn ajv-error-to-str [error]
+  (let [path (:instancePath error)
+        params (dissoc (:params error) :type :pattern :missingProperty)]
+    (str "  " (if (not (empty? path)) path "/")
+         " " (:message error)
+         (if (not (empty? params)) (str " " params) ""))))
+
+(defn check-schema [data schema verbose]
+  (let [{:keys [info warn]} @ctx
+        ajv (Ajv. #js {:allErrors true})
+        validator (.compile ajv (->js schema))
+        valid (validator (->js data))]
+    (if valid
+      data
+      (let [errors (-> validator .-errors ->clj)
+            msg (if verbose
+                  (indent-pprint-str errors "  ")
+                  (S/join "\n" (map ajv-error-to-str errors)))]
+        (fatal 1 (str "\nError during schema validation:\n"
+                      (when verbose
+                        "\nUser config:\n" (indent-pprint-str data "  "))
+                      "\nValidation errors:\n" msg))))))
 
 (defn gen-network-state
   "Generate network state/context from network configuration. Adds
@@ -631,9 +641,11 @@ General Options:
      {:keys [network-file compose-file compose-project bridge-mode]} opts
      env (js->clj (js/Object.assign #js {} js/process.env))
      self-pid js/process.pid
+     schema (load-config (:config-schema opts))
      network-config (P/-> (load-configs compose-file network-file)
                           (interpolate-walk env)
-                          (validate-and-enrich-network-config))
+                          (check-schema schema verbose)
+                          (enrich-network-config))
 
      docker (docker-client (:docker-socket opts))
      podman (docker-client (:podman-socket opts))
