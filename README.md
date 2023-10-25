@@ -34,6 +34,77 @@ will also be required for the conlink container. In particular, if the
 container uses systemd, then it will likely use `SYS_NICE` and
 `NET_BROADCAST` and conlink will likewise need those capabilities.
 
+## Network Configuration Syntax
+
+Network configuration can either be loaded directly from configuration
+files using the `--network-config` option or it can be loaded from
+`x-network` properties contained in docker-compose files using the
+`--compose-file`. Multiple of each option may be specified and all the
+network configuration will be merged into a final network
+configuration.
+
+The network configuration can have three top level keys: `links`,
+`tunnels`, and `commands`.
+
+### Links
+
+Each link defintion specifies an interface that will be configured in
+a container. Most types have some sort of connection to either the
+conlink/network container or the host network namespace. For example,
+"veth" type links always have their peer end connected to a bridge in
+the conlink/network container and vlan types are children of physical
+interfaces in the host.
+
+Each link has a 'type' key that defaults to "veth" and each link
+definition must also have either a `service` key or a `container` key.
+If the link is defined in the service of a compose file then the value
+of `service` will default to the name of that service.
+
+The `container` key is a fully qualified container name that this link
+will apply to. The `service` key is the name of a docker-compose
+service that this link applies to. In the case of a `service` link, if
+more than one replica is started for that service, then the mac, and
+ip values in the link definition will be incremented by the service
+index - 1.
+
+All link definitions support the following optional properties: dev,
+ip, mtu, route, nat. If dev is not specified then it will default to
+"eth0".  For `*vlan` type interfaces, mtu cannot be larger than the
+MTU of the parent (outer-dev) device.
+
+The rows in the following table list each link type and whether
+properties are required (Y), optional (O), or disallowed (N).
+
+| type    | bridge | mac | outer-dev | vlanid |
+|---------|--------|-----|-----------|--------|
+| veth    | Y      | O   | O         | N      |
+| dummy   | N      | O   | N         | N      |
+| vlan    | N      | O   | Y         | Y      |
+| ipvlan  | N      | N   | Y         | N      |
+| macvlan | N      | O   | Y         | N      |
+| ipvtap  | N      | N   | Y         | N      |
+| macvtap | N      | O   | Y         | N      |
+
+### Tunnels
+
+Each tunnel definition must have the keys: type, bridge, remote, and
+vni.
+
+Tunnels links/interfaces will be created and attached to the
+specified bridge. Any containers with links to the same bridge will
+share a broadcast domain with the tunnel link.
+
+
+### Commands
+
+Each command defintion must have a `command` key and either
+a `service` or `container` key. If the link definition originates from
+service in a from a compose file, then the value of `service` will
+default to the name of the service it is contained within.
+
+Commands will be executed in parallel within the matching container
+once all links are succesfully configured for that container.
+
 
 ## Examples
 
