@@ -37,6 +37,17 @@ properties:
         vlanid:    {type: number}
         nat:       {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+/[0-9]*$"}
 
+  tunnels:
+    type: array
+    items:
+      type: object
+      required: ["type", "bridge", "remote", "vni"]
+      properties:
+        type:      {type: string, enum: [geneve, vxlan]}
+        bridge:    {type: string}
+        remote:    {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+$"}
+        vni:       {type: number}
+
   commands:
     type: array
     items:

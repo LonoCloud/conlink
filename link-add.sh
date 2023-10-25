@@ -18,6 +18,7 @@ usage () {
   echo >&2 "The INTF1/PID1 parameters have type specific meaning:"
   echo >&2 "  - veth: the peer interface in PID1 netns"
   echo >&2 "  - *vlan/*vtap: the parent interface in PID1 netns"
+  echo >&2 "  - geneve/vxlan: not applicable"
   echo >&2 ""
   echo >&2 "OPTIONS:"
   echo >&2 "  --verbose                - Verbose output (set -x)"
@@ -39,6 +40,9 @@ usage () {
   echo >&2 "  --mode MODE              - Mode settings for *vlan TYPEs"
   echo >&2 "  --vlanid VLANID          - VLAN ID for *vlan TYPEs"
   echo >&2 "  --nat TARGET             - Stateless NAT traffic to/from TARGET"
+  echo >&2 ""
+  echo >&2 "  --remote REMOTE          - Remote address for geneve/vxlan types"
+  echo >&2 "  --vni VNI                - Virtual Network Identifier for geneve/vxlan types"
   exit 2
 }
 
@@ -89,6 +93,9 @@ while [ "${*}" ]; do
   --mode)           MODE="${OPTARG}"; shift ;;
   --vlanid)         VLANID="${OPTARG}"; shift ;;
   --nat)            NAT="${OPTARG}"; shift ;;
+
+  --remote)         REMOTE="${OPTARG}"; shift ;;
+  --vni)            VNI="${OPTARG}"; shift ;;
   -h|--help)        usage ;;
   *)                positional="${positional} $1" ;;
   esac
@@ -105,9 +112,22 @@ TYPE=$1 PID0=$2 IF0=$3
 
 LOG_ID="${TYPE} ${PID0}:${IF0}"
 case "${TYPE}" in
-veth)        LOG_ID="${LOG_ID} <-> ${PID1}:${IF1}" ;;
-*vlan|*vtap) LOG_ID="${LOG_ID} <<< ${PID1}:${IF1}" ;;
-*) [ "${PID1}" != "<SELF>" ] && die "--pid1 not supported for ${TYPE} link" ;;
+veth)
+  LOG_ID="${LOG_ID} <-> ${PID1}:${IF1}"
+  ;;
+*vlan|*vtap)
+  LOG_ID="${LOG_ID} <<< ${PID1}:${IF1}"
+  [ "${IF1}" ] || die "--intf1 required for ${TYPE} link"
+  [ "${REMOTE}" -o "${VNI}" ] && die "--remote/--vlanid incompatible with ${TYPE} link"
+  ;;
+geneve|vxlan)
+  LOG_ID="${LOG_ID} <<->> ${REMOTE}(${VNI})"
+  [ "${REMOTE}" -a "${VNI}" ] || die "--remote and --vni required for ${TYPE} link"
+  [ "${MODE}" -o "${VLANID}" ] && die "--mode/--vlanid incompatible with ${TYPE} link"
+  ;;
+*)
+  [ "${PID1}" != "<SELF>" ] && die "--pid1 not supported for ${TYPE} link"
+  ;;
 esac
 
 [ "${PID1}" = "<SELF>" ] && PID1=$$
@@ -142,6 +162,11 @@ veth)
   ip -netns ${NS1} link set ${SIF0} netns ${NS0}
   info "Renaming ${TYPE} interface"
   ip -netns ${NS0} link set ${SIF0} name ${IF0}
+  ;;
+geneve|vxlan)
+  info "Creating ${TYPE} tunnel interface"
+  ip -netns ${NS1} link add name ${IF0} type ${TYPE} \
+    remote ${REMOTE} id ${VNI}
   ;;
 *)
   info "Creating ${TYPE} interface"

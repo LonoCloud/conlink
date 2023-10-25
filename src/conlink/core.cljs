@@ -49,7 +49,7 @@ General Options:
                         " --system-id=random --no-mlockall --delete-bridges"))
 
 (def VLAN-TYPES #{:vlan :macvlan :macvtap :ipvlan :ipvtap})
-(def LINK-ADD-OPTS [:ip :mac :route :mtu :mode :vlanid :nat])
+(def LINK-ADD-OPTS [:ip :mac :route :mtu :mode :vlanid :nat :remote :vni])
 
 (def ctx (atom {:error #(apply Eprintln "ERROR:" %&)
                 :warn  #(apply Eprintln "WARNING:" %&)
@@ -148,13 +148,13 @@ General Options:
 
 (defn gen-network-state
   "Generate network state/context from network configuration. Adds
-  empty :devices map and :bridges map containing nil status for each
-  bridge mentioned in the network config :links."
-  [{:keys [links]}]
+  empty :devices map and :bridges map containing nil status for
+  each bridge mentioned in the network config :links and :tunnels."
+  [{:keys [links tunnels]}]
   (reduce (fn [state bridge]
             (assoc-in state [:bridges bridge :status] nil))
           {:devices {} :bridges {}}
-          (keep :bridge links)))
+          (keep :bridge (concat links tunnels))))
 
 (defn link-outer-dev
   "outer-dev format:
@@ -211,6 +211,14 @@ General Options:
                           :pid pid
                           :outer-pid outer-pid})]
     link))
+
+(defn tunnel-instance-enrich
+  [tunnel self-pid]
+  (let [dev (str (:type tunnel) "-" (:vni tunnel))]
+    (merge tunnel {:dev dev
+                   :outer-dev dev
+                   :dev-id dev
+                   :pid self-pid})))
 
 ;;; General commands
 
@@ -474,25 +482,29 @@ General Options:
         ev-stream)
       #(error "Could not start docker listener"))))
 
+(defn link-repr [{:keys [type dev remote outer-dev bridge ip dev-id]}]
+  (str dev-id
+       (if remote
+         (str " (bridge " bridge ", remote " remote ")")
+         (str (when ip (str " (IP " ip ")"))
+              (when outer-dev (str " <-> " outer-dev))
+              (when bridge (str " (bridge " bridge ")"))))))
 
 (defn modify-link
   "Depending on 'action' create ('start') or delete ('die') a link
-  defined by 'link'. veth type links will also be added to the local
-  bridge defined in the link. The network-state for this link will be
-  updated to either :creating or :deleting before any action is taken.
-  Once the async commands complete, the state will be updated to
-  either :created or nil."
+  defined by 'link'. veth type links and tunnel interfaces will also
+  be added to the local bridge defined in the link. The network-state
+  for this link will be updated to either :creating or :deleting
+  before any action is taken.  Once the async commands complete, the
+  state will be updated to either :created or nil."
   [link action]
   (P/let
     [{:keys [error log]} @ctx
-     {:keys [type dev outer-dev bridge ip mac dev-id]} link
+     {:keys [type outer-dev bridge dev-id]} link
      status-path [:network-state :devices dev-id :status]
      link-status (get-in @ctx status-path)]
     (log (str (get {"start" "Creating" "die" "Deleting"} action)
-              " " (name type) " link " dev-id
-              (when ip (str " (IP " ip ")"))
-              (when outer-dev (str " <-> " outer-dev))
-              (when bridge (str " (bridge " bridge ")"))))
+              " " (name type) " link " (link-repr link)))
     (condp = action
       "start"
       (if link-status
@@ -539,14 +551,11 @@ General Options:
   counts."
   []
   (let [{:keys [network-config network-state log info]} @ctx
-        {:keys [containers services]} network-config
-        {:keys [devices all-connected]} network-state
-        cfg-links (concat (mapcat :links (vals containers))
-                          (mapcat :links (vals services)))
-        live-devs (vals devices)]
+        {:keys [links tunnels]} network-config
+        {:keys [devices all-connected]} network-state]
     (when (and (not all-connected)
-               (every? #(= :created (:status %)) live-devs)
-               (>= (count live-devs) (count cfg-links)))
+               (every? #(= :created (:status %)) (vals devices))
+               (>= (count devices) (+ (count links) (count tunnels))))
       ;; Save all-connected to prevent scale/stop-start from
       ;; showing this message multiple times.
       (swap! ctx assoc-in [:network-state :all-connected] true)
@@ -731,6 +740,11 @@ General Options:
       ;; TODO: should be done on-demand
       (P/all (for [bridge (-> network-state :bridges keys)]
                (bridge-create bridge)))
+
+      ;; Create tunnels configs
+      (P/all (for [tunnel (:tunnels network-config)
+                   :let [tunnel (tunnel-instance-enrich tunnel self-pid)]]
+               (modify-link tunnel "start")))
 
       (P/all (for [client [docker podman] :when client]
                (P/let
