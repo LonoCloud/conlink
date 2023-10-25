@@ -83,7 +83,7 @@ esac
 
 ### Construct command line arguments
 vecho "Settings:"
-RUN_OPTS="${RUN_OPTS} --network none --security-opt apparmor=unconfined"
+RUN_OPTS="${RUN_OPTS} --security-opt apparmor=unconfined"
 
 vecho "  - mount network/compose config files"
 if [ "${NETWORK_FILE}" ]; then

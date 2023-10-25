@@ -235,6 +235,38 @@ General Options:
                      (indent (:stderr res) "  ")))))
       res)))
 
+(defn run*
+  "Like run but runs each cmd in cmds. Returns final cmd result or if
+  a cmd fails then returns that cmd's result."
+  [cmds opts]
+  (P/loop [cmds cmds]
+    (P/let [[cmd & cmds] cmds
+            res (run cmd opts)]
+      (if (and (= 0 (:code res)) (seq cmds))
+        (P/recur cmds)
+        res))))
+
+(defn rename-docker-eth0
+  "If eth0 exists, then rename it to DOCKER-ETH0 to prevent 'RTNETLINK
+  answers: File exists' errors during creation of links that use
+  'eth0' device name. This is necessary because even if the netns is
+  specified with the same link create command, the creation and move
+  does not appear to be idempotent and results in the conflict."
+  []
+  (P/let [{:keys [log]} @ctx
+          res (run "[ -d /sys/class/net/eth0 ]" {:quiet true})]
+    (if (not= 0 (:code res))
+      (log "No eth0 docker network interface detected")
+      (P/let [_ (log "Renaming eth0 to DOCKER-ETH0")
+              res (run* [(str "ip route save dev eth0 > /tmp/routesave")
+                         (str "ip link set eth0 down")
+                         (str "ip link set eth0 name DOCKER-ETH0")
+                         (str "ip link set DOCKER-ETH0 up")
+                         (str "ip route restore < /tmp/routesave")]
+                        {:id "rename"})]
+        (when (not= 0 (:code res))
+          (fatal 1 "Could not rename docker eth0 interface"))))))
+
 (defn start-ovs
   "Start and initialize the openvswitch daemons. Exit with error if it
   can't be started."
@@ -685,6 +717,9 @@ General Options:
       (info "Detected compose context:" compose-project))
 
     (P/do
+      (when self-cid
+        (rename-docker-eth0))
+
       (when (= :ovs bridge-mode)
         (start-ovs))
 
