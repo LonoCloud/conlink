@@ -49,6 +49,7 @@ General Options:
                         " --system-id=random --no-mlockall --delete-bridges"))
 
 (def VLAN-TYPES #{:vlan :macvlan :macvtap :ipvlan :ipvtap})
+(def LINK-ADD-OPTS [:ip :mac :route :mtu :mode :vlanid :nat])
 
 (def ctx (atom {:error #(apply Eprintln "ERROR:" %&)
                 :warn  #(apply Eprintln "WARNING:" %&)
@@ -63,7 +64,6 @@ General Options:
 
 (defn indent-pprint-str [o pre]
   (indent (trim (with-out-str (pprint o))) pre))
-
 
 
 (defn load-configs
@@ -148,12 +148,12 @@ General Options:
 
 (defn gen-network-state
   "Generate network state/context from network configuration. Adds
-  empty :links map and :bridges map containing nil status for each
+  empty :devices map and :bridges map containing nil status for each
   bridge mentioned in the network config :links."
   [{:keys [links]}]
   (reduce (fn [state bridge]
             (assoc-in state [:bridges bridge :status] nil))
-          {:links {} :bridges {}}
+          {:devices {} :bridges {}}
           (keep :bridge links)))
 
 (defn link-outer-dev
@@ -193,11 +193,11 @@ General Options:
   - :container - the container properties (passed in)
   - :outer-pid - PID of the network namespace (passed in)
   - :pid - PID of this container
-  - :link-id - container name + container interface name
+  - :dev-id - container name + container interface name
   - :outer-dev - outer interface name for veth and *vlan link types"
   [link container self-pid]
   (let [{:keys [id dev pid index name]} container
-        link-id (str name ":" (:dev link))
+        dev-id (str name ":" (:dev link))
         outer-pid (condp = (:base link)
                     :conlink self-pid
                     :host 1
@@ -207,7 +207,7 @@ General Options:
                (assoc link :outer-dev (link-outer-dev link id index))
                link)
         link (merge link {:container container
-                          :link-id link-id
+                          :dev-id dev-id
                           :pid pid
                           :outer-pid outer-pid})]
     link))
@@ -302,6 +302,7 @@ General Options:
         true
         (fatal 1 (str "Unable to run '" cmd "': " (:stderr res)))))))
 
+
 (defn bridge-create
   "Create a bridge named 'bridge'.
   Bridge type is dependent on bridge-mode (:ovs or :linux)."
@@ -364,18 +365,18 @@ General Options:
   line arguments from the 'link' definition and reports the results."
   [link]
   (P/let [{:keys [error]} @ctx
-          {:keys [type dev outer-dev pid outer-pid container link-id]} link
+          {:keys [type dev outer-dev pid outer-pid container dev-id]} link
           cmd (str "link-add.sh"
                    " '" (name type) "' '" pid "' '" dev "'"
                    (when outer-pid (str " --pid1 " outer-pid))
                    (when outer-dev (str " --intf1 " outer-dev))
                    (S/join ""
-                           (for [o [:ip :mac :route :mtu :mode :vlanid :nat]]
+                           (for [o LINK-ADD-OPTS]
                              (when-let [v (get link o)]
                                (str " --" (name o) " '" v "'")))))
-          res (run cmd {:id link-id})]
+          res (run cmd {:id dev-id})]
     (when (not= 0 (:code res))
-      (error (str "Unable to add " (name type) " " link-id)))
+      (error (str "Unable to add " (name type) " " dev-id)))
     res))
 
 (defn link-del
@@ -384,13 +385,13 @@ General Options:
   line arguments from the 'link' definition and reports the results."
   [link]
   (P/let [{:keys [warn error]} @ctx
-          {:keys [dev pid link-id]} link
+          {:keys [dev pid dev-id]} link
           cmd (str "link-del.sh " pid " " dev)
-          res (run cmd {:id link-id :quiet true})]
+          res (run cmd {:id dev-id :quiet true})]
     (when (not= 0 (:code res))
       (if (re-seq #"is no longer running" (:stderr res))
-        (warn (str "Skipping delete of " link-id " (container gone)"))
-        (error (str "Unable to delete " link-id ": " (:stderr res)))))
+        (warn (str "Skipping delete of " dev-id " (container gone)"))
+        (error (str "Unable to delete " dev-id ": " (:stderr res)))))
     res))
 
 
@@ -484,18 +485,18 @@ General Options:
   [link action]
   (P/let
     [{:keys [error log]} @ctx
-     {:keys [type dev outer-dev bridge ip mac link-id]} link
-     status-path [:network-state :links link-id :status]
+     {:keys [type dev outer-dev bridge ip mac dev-id]} link
+     status-path [:network-state :devices dev-id :status]
      link-status (get-in @ctx status-path)]
     (log (str (get {"start" "Creating" "die" "Deleting"} action)
-              " " (name type) " link " link-id
+              " " (name type) " link " dev-id
               (when ip (str " (IP " ip ")"))
               (when outer-dev (str " <-> " outer-dev))
               (when bridge (str " (bridge " bridge ")"))))
     (condp = action
       "start"
       (if link-status
-        (error (str "Link " link-id " already exists"))
+        (error (str "Link " dev-id " already exists"))
         (P/do
           (swap! ctx assoc-in status-path :creating)
           (link-add link)
@@ -504,7 +505,7 @@ General Options:
 
       "die"
       (if (not link-status)
-        (error (str "Link " link-id " does not exist"))
+        (error (str "Link " dev-id " does not exist"))
         (P/do
           (swap! ctx assoc-in status-path :deleting)
           (when bridge (bridge-drop-link bridge outer-dev))
@@ -539,13 +540,13 @@ General Options:
   []
   (let [{:keys [network-config network-state log info]} @ctx
         {:keys [containers services]} network-config
-        {:keys [links all-connected]} network-state
+        {:keys [devices all-connected]} network-state
         cfg-links (concat (mapcat :links (vals containers))
                           (mapcat :links (vals services)))
-        live-links (vals links)]
+        live-devs (vals devices)]
     (when (and (not all-connected)
-               (every? #(= :created (:status %)) live-links)
-               (>= (count live-links) (count cfg-links)))
+               (every? #(= :created (:status %)) live-devs)
+               (>= (count live-devs) (count cfg-links)))
       ;; Save all-connected to prevent scale/stop-start from
       ;; showing this message multiple times.
       (swap! ctx assoc-in [:network-state :all-connected] true)
@@ -561,7 +562,7 @@ General Options:
   if all containers/services are connected."
   [client {:keys [status id]}]
   (P/let
-    [{:keys [log info network-config network-state compose-opts self-pid]} @ctx
+    [{:keys [log info network-config compose-opts self-pid]} @ctx
      container-obj (get-container client id)
      container (inspect-container container-obj)
      cname (->> container :Name (re-seq #"(.*/)?(.*)") first last)
@@ -605,19 +606,19 @@ General Options:
   currently configured (have :created status)."
   [err origin]
   (let [{:keys [log info network-state]} @ctx
-        {:keys [links bridges]} network-state
+        {:keys [devices bridges]} network-state
         ;; filter for :created status (ignore :exists)
-        links (filter #(= :created (-> % val :status)) links)
+        devices (filter #(= :created (-> % val :status)) devices)
         bridges (filter #(= :created (-> % val :status)) bridges)]
     (info (str "Got " origin ":") err)
     (P/do
-      (when (seq links)
+      (when (seq devices)
         (P/do
-          (log (str "Removing links: " (S/join ", " (keys links))))
-          (P/all (map link-del (vals links)))))
+          (log (str "Removing devices: " (S/join ", " (keys devices))))
+          (P/all (map link-del (vals devices)))))
       (when (seq bridges)
         (P/do
-          (log (str "Removing bridges:" (S/join ", " (keys bridges))))
+          (log (str "Removing bridges: " (S/join ", " (keys bridges))))
           (P/all (map bridge-del (keys bridges)))))
       (js/process.exit 127))))
 
@@ -724,10 +725,11 @@ General Options:
         (start-ovs))
 
       ;; Check that bridges/switches do not already exist
-      (P/all (for [bridge (-> @ctx :network-state :bridges keys)]
+      (P/all (for [bridge (-> network-state :bridges keys)]
                (check-no-bridge bridge)))
       ;; Create bridges/switch configs
-      (P/all (for [bridge (-> @ctx :network-state :bridges keys)]
+      ;; TODO: should be done on-demand
+      (P/all (for [bridge (-> network-state :bridges keys)]
                (bridge-create bridge)))
 
       (P/all (for [client [docker podman] :when client]
