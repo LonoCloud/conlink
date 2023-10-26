@@ -1,3 +1,9 @@
+$defs:
+  cidr: {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+/[0-9]*$"}
+  ip:   {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+$"}
+  mac:  {type: string, pattern: "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"}
+  intf: {type: string, pattern: "^.{1,15}$"}
+
 type: object
 additionalProperties: false
 required: ["links"]
@@ -13,12 +19,12 @@ properties:
       then:
         allOf:
           - {required: ["bridge"]}
-          - {not: {required: ["vlanid"]}}
+          - {not: {required: ["mode", "vlanid"]}}
       else:
         not: {required: ["bridge"]}
         if:   {properties: {type: {const: "vlan"}}}
         then: {required: ["vlanid"]}
-        else: {not: {required: ["vlanid"]}}
+        else: {not: {required: ["mode", "vlanid"]}}
 
       additionalProperties: false
       properties:
@@ -29,13 +35,16 @@ properties:
         service:   {type: string}
         container: {type: string}
         bridge:    {type: string}
-        dev:       {type: string, default: "eth0"}
-        ip:        {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+/[0-9]*$"}
-        mac:       {type: string, pattern: "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"}
+        outer-dev: {type: string, pattern: "^.{1,15}$"}
+        dev:       {type: string, pattern: "^.{1,15}$", default: "eth0"}
+        ip:        { "$ref": "#/$defs/cidr" }
+        mac:       { "$ref": "#/$defs/mac" }
         mtu:       {type: number}
         route:     {type: string}
+        nat:       { "$ref": "#/$defs/ip" }
+        netem:     {type: string}
+        mode:      {type: string}
         vlanid:    {type: number}
-        nat:       {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+/[0-9]*$"}
 
   tunnels:
     type: array
@@ -45,8 +54,9 @@ properties:
       properties:
         type:      {type: string, enum: [geneve, vxlan]}
         bridge:    {type: string}
-        remote:    {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+$"}
+        remote:    { "$ref": "#/$defs/ip" }
         vni:       {type: number}
+        netem:     {type: string}
 
   commands:
     type: array

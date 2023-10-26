@@ -49,7 +49,7 @@ General Options:
                         " --system-id=random --no-mlockall --delete-bridges"))
 
 (def VLAN-TYPES #{:vlan :macvlan :macvtap :ipvlan :ipvtap})
-(def LINK-ADD-OPTS [:ip :mac :route :mtu :mode :vlanid :nat :remote :vni])
+(def LINK-ADD-OPTS [:ip :mac :route :mtu :nat :netem :mode :vlanid :remote :vni])
 
 (def ctx (atom {:error #(apply Eprintln "ERROR:" %&)
                 :warn  #(apply Eprintln "WARNING:" %&)

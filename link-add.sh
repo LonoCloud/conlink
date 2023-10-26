@@ -38,11 +38,13 @@ usage () {
   echo >&2 "  --mtu MTU                - MTU for both interfaces"
   echo >&2 ""
   echo >&2 "  --mode MODE              - Mode settings for *vlan TYPEs"
-  echo >&2 "  --vlanid VLANID          - VLAN ID for *vlan TYPEs"
-  echo >&2 "  --nat TARGET             - Stateless NAT traffic to/from TARGET"
+  echo >&2 "  --vlanid VLANID          - VLAN ID for vlan TYPE"
   echo >&2 ""
   echo >&2 "  --remote REMOTE          - Remote address for geneve/vxlan types"
   echo >&2 "  --vni VNI                - Virtual Network Identifier for geneve/vxlan types"
+  echo >&2 ""
+  echo >&2 "  --netem NETEM            - tc qdisc netem OPTIONS (man 8 netem)"
+  echo >&2 "  --nat TARGET             - Stateless NAT traffic to/from TARGET"
   exit 2
 }
 
@@ -74,7 +76,8 @@ IPTABLES() {
 # Parse arguments
 VERBOSE=${VERBOSE:-}
 PID1=${PID1:-<SELF>} IF1=${IF1:-eth0}
-IP0= IP1= MAC0= MAC1= ROUTE0= ROUTE1= MTU= MODE= VLANID= NAT=
+IP0= IP1= MAC0= MAC1= ROUTE0= ROUTE1= MTU=
+MODE= VLANID= REMOTE= VNI= NETEM= NAT=
 positional=
 while [ "${*}" ]; do
   param=$1; OPTARG=$2
@@ -92,10 +95,12 @@ while [ "${*}" ]; do
 
   --mode)           MODE="${OPTARG}"; shift ;;
   --vlanid)         VLANID="${OPTARG}"; shift ;;
-  --nat)            NAT="${OPTARG}"; shift ;;
 
   --remote)         REMOTE="${OPTARG}"; shift ;;
   --vni)            VNI="${OPTARG}"; shift ;;
+
+  --netem)          NETEM="${OPTARG}"; shift ;;
+  --nat)            NAT="${OPTARG}"; shift ;;
   -h|--help)        usage ;;
   *)                positional="${positional} $1" ;;
   esac
@@ -177,6 +182,11 @@ esac
 setup_if ${IF0} ${NS0} "${MAC0}" "${IP0}" "${ROUTE0}" "${MTU}"
 [ "${TYPE}" = "veth" ] && \
   setup_if ${IF1} ${NS1} "${MAC1}" "${IP1}" "${ROUTE1}" "${MTU}"
+
+if [ "${NETEM}" ]; then
+  info "Setting tc qdisc netem: ${NETEM}"
+  tc -netns ${NS0} qdisc add dev ${IF0} root netem ${NETEM}
+fi
 
 if [ "${NAT}" ]; then
   info "Adding NAT rule to ${NAT}"

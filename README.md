@@ -55,6 +55,31 @@ conlink/network container or the host network namespace. For example,
 the conlink/network container and vlan types are children of physical
 interfaces in the host.
 
+The following table describes the link properties:
+
+| property  | link types | format     | default | description              |
+|-----------|------------|------------|---------|--------------------------|
+| type      | *          | string 1   | veth    | link/interface type      |
+| service   | *          | string     | 2       | compose service          |
+| container | *          | string     |         | container name           |
+| bridge    | veth       | string     |         | conlink bridge / domain  |
+| outer-dev | not dummy  | string[15] |         | conlink/host intf name   |
+| dev       | *          | string[15] | eth0    | container intf name      |
+| ip        | *          | CIDR       |         | IP CIDR (index offset)   |
+| mac       | 3          | MAC        |         | MAC addr (index offset)  |
+| mtu       | *          | number 4   | 9000    | intf MTU                 |
+| route     | *          | string     |         | ip route add args        |
+| nat       | *          | IP         |         | DNAT/SNAT to IP          |
+| netem     | *          | string     |         | tc qdisc NetEm options   |
+| mode      | 5          | IP         |         | virt intf mode           |
+| vlanid    | vlan       | IP         |         | VLAN ID                  |
+
+- 1 - veth, dummy, vlan, ipvlan, macvlan, ipvtap, macvtap
+- 2 - defaults to outer compose service
+- 3 - not ipvlan/ipvtap
+- 4 - max MTU of parent device for \*vlan, \*vtap types
+- 5 - macvlan, macvtap, ipvlan, ipvtap
+
 Each link has a 'type' key that defaults to "veth" and each link
 definition must also have either a `service` key or a `container` key.
 If the link is defined in the service of a compose file then the value
@@ -68,42 +93,52 @@ ip values in the link definition will be incremented by the service
 index - 1.
 
 All link definitions support the following optional properties: dev,
-ip, mtu, route, nat. If dev is not specified then it will default to
-"eth0".  For `*vlan` type interfaces, mtu cannot be larger than the
-MTU of the parent (outer-dev) device.
+ip, mtu, route, nat, netem. If dev is not specified then it will
+default to "eth0".  For `*vlan` type interfaces, mtu cannot be larger
+than the MTU of the parent (outer-dev) device.
 
-The rows in the following table list each link type and whether
-properties are required (Y), optional (O), or disallowed (N).
-
-| type    | bridge | mac | outer-dev | vlanid |
-|---------|--------|-----|-----------|--------|
-| veth    | Y      | O   | O         | N      |
-| dummy   | N      | O   | N         | N      |
-| vlan    | N      | O   | Y         | Y      |
-| ipvlan  | N      | N   | Y         | N      |
-| macvlan | N      | O   | Y         | N      |
-| ipvtap  | N      | N   | Y         | N      |
-| macvtap | N      | O   | Y         | N      |
+For the `netem` property, refer to the `netem` man page. The `OPTIONS`
+grammar defines the valid strings for the `netem` property.
 
 ### Tunnels
 
+Tunnels links/interfaces will be created and attached to the specified
+bridge. Any containers with links to the same bridge will share
+a broadcast domain with the tunnel link.
+
+The following table describes the tunnel properties:
+
+| property  | format  | description                |
+|-----------|---------|----------------------------|
+| type      | string  | geneve or vxlan            |
+| bridge    | string  | conlink bridge / domain    |
+| remote    | IP      | remote host addr           |
+| vni       | number  | Virtual Network Identifier |
+| netem     | string  | tc qdisc NetEm options     |
+
 Each tunnel definition must have the keys: type, bridge, remote, and
-vni.
-
-Tunnels links/interfaces will be created and attached to the
-specified bridge. Any containers with links to the same bridge will
-share a broadcast domain with the tunnel link.
-
+vni. The netem optional property also applies to tunnel interfaces.
 
 ### Commands
 
-Each command defintion must have a `command` key and either
-a `service` or `container` key. If the link definition originates from
-service in a from a compose file, then the value of `service` will
-default to the name of the service it is contained within.
-
 Commands will be executed in parallel within the matching container
 once all links are succesfully configured for that container.
+
+The following table describes the command properties:
+
+| property  | format           | description                |
+|-----------|------------------|----------------------------|
+| service   | string           | compose service            |
+| container | string           | container name             |
+| command   | array or string  | command or shell string    |
+
+Each command defintion must have a `command` key and either
+a `service` or `container` key. The `service` and `container` keys are
+defined the same as for link properties.
+
+If the `command` value is an array then the command and arguments will
+be executed directly. If the `command` is a string then the string
+will be wrapped in `sh -c STRING` for execution.
 
 
 ## Examples
@@ -339,34 +374,30 @@ Use ssh to connect to instance 1 and 2 (as the "ubuntu" user) and then
 use nsenter to run tcpdump and ping as described for test5.
 
 
-### test8: VLAN and MTU settings
+### test7: MAC, MTU, and NetEm settings
 
-This example uses the iproute2 commmands to configure network
-interface settings like MTU and VLAN tagging.
+This example demonstrates using interface MAC, MTU, and NetEm (tc
+qdisc) settings.
 
-Start the test8 compose configuration:
-
-```
-docker-compose -f examples/test8-compose.yaml up --build --force-recreate
-```
-
-In the network container, start a tcpdump on node1's interface
-showing ethernet frame data (including VLAN tags):
+Start the test7 compose configuration:
 
 ```
-docker-compose -f examples/test8-compose.yaml exec network tcpdump -nlei node1-eth0
+docker-compose -f examples/test7-compose.yaml up --build --force-recreate
 ```
 
-From `node1` ping `node2` normally:
+Show the links in both node containers to see that the MAC addresses
+are `00:0a:0b:0c:0d:0*` and the MTUs are set to `4111`.
 
 ```
-docker-compose -f examples/test8-compose.yaml exec node1 ping 10.0.1.2
+docker-compose -f examples/test7-compose.yaml exec --index 1 ip link
+docker-compose -f examples/test7-compose.yaml exec --index 2 ip link
 ```
 
-From `node2` ping `node1` over the VLAN tagged interface:
+Ping the second node from the first to show the the NetEm setting is
+adding 40ms delay in both directions (80ms roundtrip).
 
 ```
-docker-compose -f examples/test8-compose.yaml exec node2 ping 10.100.0.1
+docker-compose -f examples/test7-compose.yaml exec --index 1 node ping 10.0.1.2
 ```
 
 ### test9: Connections to macvlan/vlan host interfaces

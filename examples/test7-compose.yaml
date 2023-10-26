@@ -1,0 +1,31 @@
+# A docker-compose file with embedded network config that demonstrates
+# MAC, MTU, and NetEm settings
+
+version: "2.4"
+
+services:
+  network:
+    build: {context: ../}
+    image: conlink
+    pid: host
+    network_mode: none
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, NET_BROADCAST, IPC_LOCK]
+    security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker
+      - ./:/test
+    command: /app/build/conlink.js --compose-file /test/test7-compose.yaml
+
+  node:
+    image: alpine
+    network_mode: none
+    scale: 2
+    command: "sleep 864000"
+    x-network:
+      links:
+        - bridge: s1
+          ip: 10.0.1.1/16
+          mac: 00:0a:0b:0c:0d:01
+          mtu: 4111
+          netem: "delay 40ms rate 10mbit"
