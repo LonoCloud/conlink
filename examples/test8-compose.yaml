@@ -1,0 +1,35 @@
+version: "2.4"
+
+services:
+  node-macvlan: &node-macvlan
+    image: python:3-alpine
+    network_mode: none
+    command: sh -c 'while ! ip link show eth0 up; do sleep 1; done; python3 -m http.server --bind 10.0.1.1 80'
+    x-network:
+      links:
+        - {type: dummy, dev: d0, ip: 10.0.1.1/24}
+        - {type: macvlan, mode: bridge, outer-dev: "${HOST_INTERFACE}", ip: "${NODE1_HOST_ADDRESS}", nat: 10.0.1.1}
+
+  node-vlan:
+    <<: *node-macvlan
+    x-network:
+      links:
+        - {type: dummy, dev: d0, ip: 10.0.1.1/24}
+        - {type: vlan, vlanid: 5,       outer-dev: "${HOST_INTERFACE}", ip: "${NODE2_HOST_ADDRESS}", nat: 10.0.1.1}
+
+  network:
+    build: {context: ../}
+    image: conlink
+    pid: host
+    network_mode: none
+    privileged: true  # required for *vlan creation in root ns
+    security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker
+      - ./:/test
+    environment:
+      - HOST_INTERFACE=${HOST_INTERFACE:?HOST_INTERFACE must be set}
+      - NODE1_HOST_ADDRESS=${NODE1_HOST_ADDRESS:?NODE1_HOST_ADDRESS must be set}
+      - NODE2_HOST_ADDRESS=${NODE2_HOST_ADDRESS:?NODE2_HOST_ADDRESS must be set}
+    command: /app/build/conlink.js --compose-file /test/test8-compose.yaml

@@ -401,15 +401,15 @@ adding 40ms delay in both directions (80ms roundtrip).
 docker-compose -f examples/test7-compose.yaml exec --index 1 node ping 10.0.1.2
 ```
 
-### test9: Connections to macvlan/vlan host interfaces
+### test8: Connections to macvlan/vlan host interfaces
 
-This example has three nodes with web servers bound to local addresses.
-The first two node are connected to macvlan sub-interfaces of a host
-physical interface. The third node is connected to a VLAN
+This example has two nodes with web servers bound to local addresses.
+The first node is connected to a macvlan sub-interfaces of a host
+physical interface. The second node is connected to a VLAN
 sub-interface of the same host (using VLAN ID/tag 5). Static NAT
 (SNAT+DNAT) is setup inside each container to map the external
-address/interface to the internal address/interface where the web
-server is running.
+address/interface to the internal address/interface (dummy) where the
+web server is running.
 
 Create an environment file with the name of the parent host interface
 and the external IP addresses to assign to each container:
@@ -419,26 +419,27 @@ cat << EOF > .env
 HOST_INTERFACE=enp6s0
 NODE1_HOST_ADDRESS=192.168.0.32/24
 NODE2_HOST_ADDRESS=192.168.0.33/24
-NODE3_HOST_ADDRESS=192.168.5.3/24
 EOF
 ```
 
-Start the test9 compose configuration using the environment file:
+Start the test8 compose configuration using the environment file:
 
 ```
-docker-compose --env-file .env -f examples/test9-compose.yaml up --build --force-recreate
+docker-compose --env-file .env -f examples/test8-compose.yaml up --build --force-recreate
 ```
 
-Connect to the internal containers from an external host on your
-network (traffic between macvlan interfaces on the same host is
+Connect to the macvlan node (NODE1_HOST_ADDRESS) from an external host
+on your network (traffic to macvlan interfaces on the same host is
 prevented):
 
 ```
 ping -c1 192.168.0.32
-ping -c1 192.168.0.33
-curl 192.168.0.32:81
-curl 192.168.0.33:82
+curl 192.168.0.32
 ```
+
+Note: to connect to the vlan node (NODE2_HOST_ADDRESS) you will need
+to configure your physical switch/router with routing/connectivity to
+VLAN 5 on the same physical link to your host.
 
 
 ## Copyright & License
