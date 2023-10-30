@@ -654,7 +654,7 @@ General Options:
     (when (and (not docker) (not podman))
       (fatal 1 "Failed to start either docker or podman client/listener"))))
 
-(defn main
+(defn server
   "Process:
     - parse/validate command line options
     - load/combine/mangle/validate network configuration
@@ -759,3 +759,13 @@ General Options:
                                         :id (.-Id ^obj container)}]]
                           (handle-event client ev))))))
       nil)))
+
+
+(defn main
+  [& args]
+  ;; nbb implicitly does this wrapping but shadow-cljs does not
+  ;; (exceptions result in successful exit code).
+  (P/catch
+    (apply server args)
+    (fn [err]
+      (fatal 1 "Error during conlink server startup:" err))))
