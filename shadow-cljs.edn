@@ -10,6 +10,7 @@
  {:conlink
   {:target :node-script
    :main conlink.core/main
+   :output-dir "build/"
    :output-to "build/conlink.js"
    ;; Don't try and connect back to shadow-cljs process
    :devtools {:enabled false :console-support false}
