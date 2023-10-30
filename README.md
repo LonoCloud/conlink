@@ -370,8 +370,9 @@ Once the stack is finish deploying, show the outputs of the stack
 aws --region us-west-2 cloudformation describe-stacks --stack-name ${USER}-conlink-test6 | jq '.Stacks[0].Outputs'
 ```
 
-Use ssh to connect to instance 1 and 2 (as the "ubuntu" user) and then
-use nsenter to run tcpdump and ping as described for test5.
+Use ssh to connect to instance 1 and 2 (as the "ubuntu" user), then
+sudo to root and cd into `/root/conlink`. You can now run the tcpdump
+and ping test described for test5.
 
 
 ### test7: MAC, MTU, and NetEm settings

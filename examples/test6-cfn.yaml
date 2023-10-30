@@ -30,9 +30,9 @@ Parameters:
 Mappings:
   RegionMap:
     us-east-1:
-      AMI:     "ami-00482f016b2410dc8"  # Ubuntu 21.10
+      AMI:     "ami-0fc5d935ebf8bc3bc"  # Ubuntu 22.04 LTS amd64 jammy (built 2023-09-19)
     us-west-2:
-      AMI:     "ami-0d4a468c8fcc4b5f0"  # Ubuntu 21.10
+      AMI:     "ami-0efcece6bed30fd98"  # Ubuntu 22.04 LTS amd64 jammy (built 2023-09-19)
 
 
 Resources:
@@ -57,7 +57,6 @@ Resources:
     Properties:
       Type: String
       Value: !Sub |
-        set -x
         # Uncomment to allow root login using KeyPairName
         #sed -i "s/^.* ssh-rsa/ssh-rsa/" /root/.ssh/authorized_keys
         
@@ -65,31 +64,34 @@ Resources:
         apt-get -y install ca-certificates curl gnupg lsb-release
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 
-        # podman repo
-        . /etc/os-release
-        curl -L "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_$VERSION_ID/Release.key" | apt-key add -
-        echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_$VERSION_ID/ /" | tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
-
         # docker repo
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-        # install docker and podman
+        # install docker and docker-compose
         apt-get -y update
-        apt-get -y install git podman docker-ce docker-ce-cli containerd.io
+        apt-get -y install git docker-ce docker-ce-cli
+        curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
 
         # kernel modules needed by conlink
         modprobe openvswitch
         modprobe geneve
 
-        ## enable and trigger systemd/dbus for ubuntu user
-        loginctl enable-linger ubuntu
-        echo "podman ps" | sudo -i -u ubuntu bash
+        ## Uncomment below to install/configure podman
+        # # podman repo
+        # . /etc/os-release
+        # curl -L "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_$VERSION_ID/Release.key" | apt-key add -
+        # echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_$VERSION_ID/ /" | tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+        # apt-get -y install podman containerd.io
+        # ## enable and trigger systemd/dbus for ubuntu user
+        # loginctl enable-linger ubuntu
+        # echo "podman ps" | sudo -i -u ubuntu bash
 
-        ## Download conlink image and repo as ubuntu user
-        sudo -i -u ubuntu bash << EOF
-        podman pull lonocloud/conlink
-        git clone https://github.com/LonoCloud/conlink /home/ubuntu/conlink
-        EOF
+        ## Download conlink image and repo
+        docker pull lonocloud/conlink:config-and-cljs-refactor
+        git clone https://github.com/LonoCloud/conlink /root/conlink
+        cd /root/conlink
+        git checkout -b config-and-cljs-refactor origin/config-and-cljs-refactor
 
         #cfn-signal -e 0 --stack ${AWS::StackName} --region ${AWS::Region} --resource WaitHandle
         cat > /tmp/signal << EOF
@@ -102,11 +104,11 @@ Resources:
         EOF
         curl -T /tmp/signal "${WaitHandle}"
 
-        ## Start conlink as ubuntu user
-        sudo -i -u ubuntu bash << EOF
-        cd /home/ubuntu/conlink
-        ./conlink-start.sh -v --host-mode podman --network-file examples/test5-geneve.yaml -- --rm --name conlink --publish 6081:6081/udp -e REMOTE=$REMOTE -e NODE_IP=$NODE_IP
-        EOF
+        ## Start test5 example using conlink
+        sed -i 's@image: .*conlink@image: lonocloud/conlink:config-and-cljs-refactor@' examples/test5-geneve-compose.yaml
+        echo "REMOTE=$REMOTE" > .env
+        echo "NODE_IP=$NODE_IP" >> .env
+        docker-compose --env-file .env -f examples/test5-geneve-compose.yaml up --force-recreate
 
 
   Eni1:
@@ -129,6 +131,7 @@ Resources:
       Type: String
       Value: !Sub |
         #!/bin/bash
+        set -x
         export REMOTE=${Eni2.PrimaryPrivateIpAddress} NODE_IP=192.168.100.1
         ${BaseUserData.Value}
 
@@ -138,6 +141,7 @@ Resources:
       Type: String
       Value: !Sub |
         #!/bin/bash
+        set -x
         export REMOTE=${Eni1.PrimaryPrivateIpAddress} NODE_IP=192.168.100.2
         ${BaseUserData.Value}
 
