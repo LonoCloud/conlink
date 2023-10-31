@@ -464,7 +464,7 @@ General Options:
   "Return a docker/dockerode client object for the docker/podman
   server listening at 'path'."
   [path]
-  (P/let [{:keys [error log]} @ctx]
+  (P/let [{:keys [warn log]} @ctx]
     (P/catch
       (P/let
         [client (Docker. #js {:socketPath path})
@@ -472,7 +472,7 @@ General Options:
          containers (list-containers client)]
         (log (str "Listening on " path))
         client)
-      #(error "Could not start docker client on '" path "': " %))))
+      #(warn "Could not start docker client on '" path "': " %))))
 
 (defn docker-listen
   "Listen for docker events from 'client' that match filter 'filters'.
