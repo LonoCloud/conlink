@@ -21,7 +21,7 @@
   :net2dot
   {:target :node-script
    :main conlink.net2dot/main
-   :output-dir "build/"
+   :output-dir "build/net2dot"
    :output-to "build/net2dot.js"
    ;; Don't try and connect back to shadow-cljs process
    :devtools {:enabled false :console-support false}
