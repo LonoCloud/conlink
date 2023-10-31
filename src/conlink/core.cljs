@@ -7,7 +7,7 @@
             [cljs-bean.core :refer [->clj ->js]]
             [conlink.util :refer [parse-opts Eprintln fatal
                                   trim indent interpolate-walk deep-merge
-                                  spawn read-file load-config]]
+                                  spawn read-file load-config resolve-path]]
             [conlink.addrs :as addrs]
             #_["ajv$default" :as Ajv]
             #_["dockerode$default" :as Docker]))
@@ -44,6 +44,10 @@ General Options:
 
 ;; TODO: :service should require either command line option or
 ;; detection of running in a compose project (but not both).
+
+;; TODO: shadow-cljs doesn't support *file*
+;;(path/dirname *file*))
+(def SCHEMA-PATHS [(js/process.cwd) "/app/build/" "/app/" "../"])
 
 (def OVS-START-CMD (str "/usr/share/openvswitch/scripts/ovs-ctl start"
                         " --system-id=random --no-mlockall --delete-bridges"))
@@ -638,9 +642,11 @@ General Options:
 (defn arg-checks
   "Check command line arguments. Exit with error if arguments are
   invalid."
-  [{:keys [network-file compose-file]}]
+  [{:keys [network-file compose-file config-schema orig-config-schema]}]
   (when (and (empty? network-file) (empty? compose-file))
-    (fatal 2 "either --network-file or --compose-file is required")))
+    (fatal 2 "either --network-file or --compose-file is required"))
+  (when (empty? config-schema)
+    (fatal 2 "Could not find config-schema" orig-config-schema)))
 
 (defn startup-checks
   "Check startup state and exit if openvswitch kernel module is not
@@ -676,6 +682,8 @@ General Options:
      opts (merge
             opts
             {:bridge-mode (keyword (:bridge-mode opts))
+             :orig-config-schema (:config-schema opts)
+             :config-schema (resolve-path (:config-schema opts) SCHEMA-PATHS)
              :network-file (mapcat #(S/split % #":") (:network-file opts))
              :compose-file (mapcat #(S/split % #":") (:compose-file opts))})
      _ (arg-checks opts)
@@ -718,6 +726,7 @@ General Options:
     (js/process.on "uncaughtException" #(exit-handler %1 %2))
 
     (log "Bridge mode:" (name bridge-mode))
+    (log (str "Using schema at '" (:config-schema opts) "'"))
     (info (str "Starting network config\n"
                (indent-pprint-str network-config "  ")))
     (info (str "Starting network state:\n"

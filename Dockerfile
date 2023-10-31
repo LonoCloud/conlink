@@ -28,7 +28,8 @@ RUN apt-get -y install libpcap-dev tcpdump iproute2 iputils-ping curl \
                        openvswitch-switch openvswitch-testcontroller
 
 COPY --from=build /app/ /app/
-ADD link-add.sh link-del.sh schema.yaml /app/
+ADD link-add.sh link-del.sh /app/
+ADD schema.yaml /app/build/
 
 ENV PATH /app:$PATH
 WORKDIR /app

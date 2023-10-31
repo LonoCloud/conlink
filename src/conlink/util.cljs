@@ -7,6 +7,7 @@
             [cljs-bean.core :refer [->clj]]
             ["util" :refer [promisify]]
             ["fs" :as fs]
+            ["path" :as path]
             ["child_process" :as cp]
             ["neodoc" :as neodoc]))
 
@@ -138,3 +139,10 @@
                 (edn/read-string raw))]
     (->clj cfg)))
 
+(defn resolve-path
+  "Resolve 'path' using 'dirs'. If 'path' is absolute, return 'path',
+  otherwise search 'dirs' for 'path' and return resolved path.
+  Note, this uses fs/existsSync so it's more suited for startup time."
+  [path dirs]
+  (first (filter fs/existsSync
+                 (map #(path/join % path) (concat ["/"] dirs)))))
