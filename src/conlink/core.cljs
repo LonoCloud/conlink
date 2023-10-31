@@ -50,6 +50,7 @@ General Options:
 
 (def VLAN-TYPES #{:vlan :macvlan :macvtap :ipvlan :ipvtap})
 (def LINK-ADD-OPTS [:ip :mac :route :mtu :nat :netem :mode :vlanid :remote :vni])
+(def INTF-MAX-LEN 15)
 
 (def ctx (atom {:error #(apply Eprintln "ERROR:" %&)
                 :warn  #(apply Eprintln "WARNING:" %&)
@@ -163,7 +164,7 @@ General Options:
      - len > 15:    'c' cid[0:8]       '-' dev[0:5]"
   [{:as link :keys [container service dev]} cid index]
   (let [oif (str (if service (str service "_" index) container) "-" dev)
-        oif (if (<= (count oif) 15)
+        oif (if (<= (count oif) INTF-MAX-LEN)
               oif
               (str "c" (.substring cid 0 8)  "-" (.substring dev 0 5)))]
     oif))
@@ -196,7 +197,7 @@ General Options:
   - :dev-id - container name + container interface name
   - :outer-dev - outer interface name for veth and *vlan link types"
   [link container self-pid]
-  (let [{:keys [id dev pid index name]} container
+  (let [{:keys [id pid index name]} container
         dev-id (str name ":" (:dev link))
         outer-pid (condp = (:base link)
                     :conlink self-pid

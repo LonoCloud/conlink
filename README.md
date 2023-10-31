@@ -441,6 +441,40 @@ Note: to connect to the vlan node (NODE2_HOST_ADDRESS) you will need
 to configure your physical switch/router with routing/connectivity to
 VLAN 5 on the same physical link to your host.
 
+## GraphViz network configuration rendering
+
+You can use d3 and GraphViz to create a visual graph rendering of
+a network configuration. First start a simple web server in the
+examples directory:
+
+```
+cd examples
+python3 -m http.server 8080
+```
+
+Use the `net2dot` script to transform a network
+configuration into a GraphViz data file (dot language). The `net2dot`
+script supports `--compose-file` and `--network-file` command line
+options. To render the network configuration for example test1, run
+the following in another window:
+
+```
+./net2dot --compose-file examples/test1-compose.yaml > examples/data.dot
+```
+
+Then load `http://localhost:8080` in your browser to see the rendered
+image.
+
+The file `examples/net2dot.yaml` contains a configuration that
+combines many different configuration elements (veth links, dummy
+interfaces, vlan type links, tunnels, etc).
+
+```
+./net2dot --network-file examples/net2dot.yaml > examples/data.dot
+```
+
+Then load `http://localhost:8080` in your browser.
+
 
 ## Copyright & License
 
