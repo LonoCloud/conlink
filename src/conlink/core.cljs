@@ -25,6 +25,7 @@ Usage:
 General Options:
   -v, --verbose                     Show verbose output (stderr)
                                     [env: VERBOSE]
+  --show-config                     Print loaded network config JSON and exit
   --bridge-mode BRIDGE-MODE         Bridge mode (ovs or linux) to use for
                                     bridge/switch connections
                                     [default: ovs]
@@ -677,7 +678,7 @@ General Options:
     "
   [& args]
   (P/let
-    [{:as opts :keys [verbose]} (parse-opts usage args)
+    [{:as opts :keys [verbose show-config]} (parse-opts usage args)
      {:keys [log info]} (swap! ctx merge (when verbose {:info Eprintln}))
      opts (merge
             opts
@@ -697,6 +698,9 @@ General Options:
                           (interpolate-walk env)
                           (check-schema schema verbose)
                           (enrich-network-config))
+     _ (when show-config
+         (println (js/JSON.stringify (->js network-config)))
+         (js/process.exit 0))
 
      docker (docker-client (:docker-socket opts))
      podman (docker-client (:podman-socket opts))
