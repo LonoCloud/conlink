@@ -1,0 +1,17 @@
+version: "2.4"
+
+x-network:
+  links:
+    - {service: r0, bridge: s1, dev: e1, ip: "10.1.0.100/24"}
+
+services:
+  network:
+    command: /app/build/conlink.js --compose-file ${COMPOSE_FILE:-examples/test4-multiple/node1-compose.yaml}
+
+  node1:
+    image: alpine
+    network_mode: none
+    command: sleep 864000
+    x-network:
+      links:
+        - {bridge: s1, ip: "10.1.0.1/16", route: "default via 10.1.0.100"}

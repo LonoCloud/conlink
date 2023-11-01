@@ -1,5 +1,0 @@
-version: "2.4"
-
-services:
-  network:
-    command: /sbin/conlink --compose-file ${COMPOSE_FILE:-examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml:examples/test7-multiple/nodes2.yaml:examples/test7-multiple/all-compose.yaml} --network-file examples/test7-multiple/web-network.yaml

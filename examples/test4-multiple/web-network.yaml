@@ -1,0 +1,2 @@
+commands:
+  - {service: r0, command: "python3 -m http.server 80"}

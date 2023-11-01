@@ -1,6 +1,8 @@
+node_modules/*
+.shadow-cljs/*
+build/*
 podman.sock*
 *.swp
 .nfs*
 examples/*.swp
 examples/.nfs*
-__pycache__

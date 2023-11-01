@@ -1,0 +1,21 @@
+links:
+  - {service: nodeA, bridge: s1, dev: e1}
+  - {service: nodeA, bridge: s2, dev: e2}
+  - {service: nodeA, bridge: s3, dev: e3}
+  - {service: nodeB, bridge: s2}
+
+  - {container: nodeC, bridge: s3}
+
+  - {type: dummy, container: nodeD, dev: dummy0}
+
+  - {type: vlan,    service: nodeE, dev: v0,  outer-dev: eni0, vlanid: 5}
+  - {type: macvlan, service: nodeE, dev: mv0, outer-dev: eni0, mode: bridge}
+  - {type: macvlan, service: nodeF, dev: mv0, outer-dev: eni0, mode: bridge}
+  - {type: ipvlan,  service: nodeG, dev: iv0, outer-dev: eni1, mode: bridge}
+  - {type: macvlan, service: nodeH, dev: mv0, outer-dev: eni1, mode: bridge}
+
+tunnels:
+  - {type: geneve, bridge: s1, vni: 1001, remote: "${REMOTE1}"}
+  - {type: geneve, bridge: s3, vni: 1002, remote: "${REMOTE2}"}
+
+

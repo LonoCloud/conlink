@@ -1,0 +1,25 @@
+version: "2.4"
+
+services:
+  r0:
+    image: python:3-alpine
+    network_mode: none
+    command: sleep 864000
+    x-network:
+      links:
+        - {bridge: s0, dev: e0, ip: "10.0.0.100/24"}
+
+  network:
+    build: {context: ../..}
+    image: conlink
+    pid: host
+    network_mode: none
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, NET_BROADCAST, IPC_LOCK]
+    security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker
+      - ../../:/test
+    working_dir: /test
+    command: /app/build/conlink.js --compose-file ${COMPOSE_FILE:-examples/test4-multiple/base-compose.yaml}
+

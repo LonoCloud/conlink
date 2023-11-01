@@ -1,0 +1,33 @@
+;; shadow-cljs configuration
+{:source-paths
+ ["src/"]
+
+ :dependencies
+ [[cljs-bean "1.9.0"]
+  [funcool/promesa "11.0.678"]]
+
+ :builds
+ {:conlink
+  {:target :node-script
+   :main conlink.core/main
+   :output-dir "build/"
+   :output-to "build/conlink.js"
+   ;; Don't try and connect back to shadow-cljs process
+   :devtools {:enabled false :console-support false}
+   :compiler-options
+   {:optimizations :simple
+    :source-map-use-fs-paths true}}
+
+  :net2dot
+  {:target :node-script
+   :main conlink.net2dot/main
+   :output-dir "build/net2dot"
+   :output-to "build/net2dot.js"
+   ;; Don't try and connect back to shadow-cljs process
+   :devtools {:enabled false :console-support false}
+   :compiler-options
+   {:optimizations :simple
+    :source-map-use-fs-paths true}}
+
+  }}
+

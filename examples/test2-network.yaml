@@ -1,42 +1,5 @@
-# "Physical" network interface definitions.
-# This defines container to container links.
 links:
-  - left:  {container: node1_1,   intf:       eth0,  ip: 10.0.1.1/16}
-    right: {container: network_1, intf: node1-eth0}
-  - left:  {container: node2_1,   intf:       eth0,  ip: 10.0.1.2/16}
-    right: {container: network_1, intf: node2-eth0}
+  - {service: node,     bridge: s1,  dev: eth0, ip: 10.0.1.1/16, route: "default via 10.0.0.1"}
 
-# Commands to run in containers after they are connected
-commands:
-  - container: node1_1
-    command: ip route add default via 10.0.0.1
-  - container: node2_1
-    command: ip route add default via 10.0.0.1
-
-# Network container mininet configuration
-# This configuration is used by config_mininet.py inside the network
-# container to define complex network elements (routers, switches,
-# etc).
-mininet-cfg:
-  switches:
-    - name: s1   # the switch between node1, node2, and internet
-  hosts:
-    - name: internet
-      opts: {ip: 10.0.0.1/16}
-  interfaces:
-    - name: node1-eth0
-      node: s1
-    - name: node2-eth0
-      node: s1
-  links:
-    - left: internet
-      right: s1
-
-  commands:
-    # In "internet" listen to 8.8.8.* addresses.
-    - node: internet
-      sync: true
-      command:
-        - ip link add ${DNS_INTF:-gdns} type dummy
-        - ip link set ${DNS_INTF:-gdns} up
-        - ip addr add 8.8.8.8/24 dev ${DNS_INTF:-gdns}
+  - {service: internet, bridge: s1,  dev: eth0, ip: 10.0.0.1/16}
+  - {service: internet, type: dummy, dev: i0,   ip: 8.8.8.8/24}

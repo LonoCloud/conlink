@@ -1,0 +1,31 @@
+x-network:
+  tunnels:
+    - {type: geneve, bridge: s1, vni: 1001, remote: "${REMOTE}"}
+
+services:
+  network:
+    build: {context: ../}
+    image: conlink
+    pid: host
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, NET_BROADCAST, IPC_LOCK]
+    security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker
+      - ./:/test
+    environment:
+      - REMOTE=${REMOTE:?REMOTE must be set}
+      - NODE_IP=${NODE_IP:?NODE_IP must be set}
+    ports:
+      - "8472:8472/udp" # vxlan default (Linux, ovs is 4789)
+      - "6081:6081/udp" # geneve default
+    command: /app/build/conlink.js --compose-file /test/test5-geneve-compose.yaml
+
+  node:
+    image: alpine
+    network_mode: none
+    command: sleep 864000
+    x-network:
+      links:
+        - {bridge: s1, ip: "${NODE_IP}/24"}
+

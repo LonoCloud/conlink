@@ -8,29 +8,137 @@ a declarative configuration.
 * docker-compose version 1.25.4 or later.
 * `openvswitch` kernel module loaded on the host
 * `geneve` (and/or `vxlan`) kernel module loaded on the host (only
-  needed for `test5-geneve` example)
+  needed for `test5-geneve-compose` example)
 
 ## Usage Notes
 
 ### Asynchronous startup
 
-The container to container links are created after the first process
-in the container starts executing. This means the interfaces for those
-links will not be immediately present. The container code will need to
-account for this asynchronous interface behavior. The `node2` service
-in `examples/test2-compose.yaml` shows a simple example of a container
-command that will wait for an interface to appear before continuing
-with another command.
+The conlink managed container links are created after the main process
+in the container starts executing. This is different from normal
+docker behavior where the interfaces are created and configured before
+the main process starts. This means the interfaces for those
+links will not be immediately present and the container process will
+need to account for this asynchronous interface behavior. The `node`
+service in `examples/test2-compose.yaml` shows a simple example of
+a container command that will wait for an interface to appear before
+continuing with another command.
 
 ### System Capabilities/Permissions
 
 The conlink container needs to have a superset of the network related
 system capabilities of the containers that it will connect to. At
 a minimum `SYS_ADMIN` and `NET_ADMIN` are required but depending on
-what the containers require then other capabilities will also be
-required. In particular, if the container uses systemd, then it will
-likely use `SYS_NICE` and `NET_BROADCAST` and conlink will likewise
-need those capabilities.
+what the other containers require then those additional capabilities
+will also be required for the conlink container. In particular, if the
+container uses systemd, then it will likely use `SYS_NICE` and
+`NET_BROADCAST` and conlink will likewise need those capabilities.
+
+## Network Configuration Syntax
+
+Network configuration can either be loaded directly from configuration
+files using the `--network-config` option or it can be loaded from
+`x-network` properties contained in docker-compose files using the
+`--compose-file`. Multiple of each option may be specified and all the
+network configuration will be merged into a final network
+configuration.
+
+The network configuration can have three top level keys: `links`,
+`tunnels`, and `commands`.
+
+### Links
+
+Each link defintion specifies an interface that will be configured in
+a container. Most types have some sort of connection to either the
+conlink/network container or the host network namespace. For example,
+"veth" type links always have their peer end connected to a bridge in
+the conlink/network container and vlan types are children of physical
+interfaces in the host.
+
+The following table describes the link properties:
+
+| property  | link types | format     | default | description              |
+|-----------|------------|------------|---------|--------------------------|
+| type      | *          | string 1   | veth    | link/interface type      |
+| service   | *          | string     | 2       | compose service          |
+| container | *          | string     |         | container name           |
+| bridge    | veth       | string     |         | conlink bridge / domain  |
+| outer-dev | not dummy  | string[15] |         | conlink/host intf name   |
+| dev       | *          | string[15] | eth0    | container intf name      |
+| ip        | *          | CIDR       |         | IP CIDR (index offset)   |
+| mac       | 3          | MAC        |         | MAC addr (index offset)  |
+| mtu       | *          | number 4   | 9000    | intf MTU                 |
+| route     | *          | string     |         | ip route add args        |
+| nat       | *          | IP         |         | DNAT/SNAT to IP          |
+| netem     | *          | string     |         | tc qdisc NetEm options   |
+| mode      | 5          | IP         |         | virt intf mode           |
+| vlanid    | vlan       | IP         |         | VLAN ID                  |
+
+- 1 - veth, dummy, vlan, ipvlan, macvlan, ipvtap, macvtap
+- 2 - defaults to outer compose service
+- 3 - not ipvlan/ipvtap
+- 4 - max MTU of parent device for \*vlan, \*vtap types
+- 5 - macvlan, macvtap, ipvlan, ipvtap
+
+Each link has a 'type' key that defaults to "veth" and each link
+definition must also have either a `service` key or a `container` key.
+If the link is defined in the service of a compose file then the value
+of `service` will default to the name of that service.
+
+The `container` key is a fully qualified container name that this link
+will apply to. The `service` key is the name of a docker-compose
+service that this link applies to. In the case of a `service` link, if
+more than one replica is started for that service, then the mac, and
+ip values in the link definition will be incremented by the service
+index - 1.
+
+All link definitions support the following optional properties: dev,
+ip, mtu, route, nat, netem. If dev is not specified then it will
+default to "eth0".  For `*vlan` type interfaces, mtu cannot be larger
+than the MTU of the parent (outer-dev) device.
+
+For the `netem` property, refer to the `netem` man page. The `OPTIONS`
+grammar defines the valid strings for the `netem` property.
+
+### Tunnels
+
+Tunnels links/interfaces will be created and attached to the specified
+bridge. Any containers with links to the same bridge will share
+a broadcast domain with the tunnel link.
+
+The following table describes the tunnel properties:
+
+| property  | format  | description                |
+|-----------|---------|----------------------------|
+| type      | string  | geneve or vxlan            |
+| bridge    | string  | conlink bridge / domain    |
+| remote    | IP      | remote host addr           |
+| vni       | number  | Virtual Network Identifier |
+| netem     | string  | tc qdisc NetEm options     |
+
+Each tunnel definition must have the keys: type, bridge, remote, and
+vni. The netem optional property also applies to tunnel interfaces.
+
+### Commands
+
+Commands will be executed in parallel within the matching container
+once all links are succesfully configured for that container.
+
+The following table describes the command properties:
+
+| property  | format           | description                |
+|-----------|------------------|----------------------------|
+| service   | string           | compose service            |
+| container | string           | container name             |
+| command   | array or string  | command or shell string    |
+
+Each command defintion must have a `command` key and either
+a `service` or `container` key. The `service` and `container` keys are
+defined the same as for link properties.
+
+If the `command` value is an array then the command and arguments will
+be executed directly. If the `command` is a string then the string
+will be wrapped in `sh -c STRING` for execution.
 
 
 ## Examples
@@ -51,106 +159,171 @@ Start the test1 compose configuration:
 docker-compose -f examples/test1-compose.yaml up --build --force-recreate
 ```
 
+From h1 ping the address of h3 (routed via the r0 container):
+
 ```
-sudo nsenter -n -t $(pgrep -f mininet:h1) ping 10.0.0.100
+docker-compose -f examples/test1-compose.yaml exec h1 ping 10.0.0.100
 ```
 
 
-### test2: compose file with separate network config file
+### test2: compose file with separate network config and live scaling
 
 Start the test2 compose configuration:
 
 ```
-docker-compose -f examples/test2-compose.yaml up --build --force-recreate
+docker-compose -f examples/test2-compose.yaml up -d --build --force-recreate
 ```
 
-From `node1` ping `node2`:
+From the first node ping the second:
 
 ```
-docker-compose -f examples/test2-compose.yaml exec node1 ping 10.0.1.2
+docker-compose -f examples/test2-compose.yaml exec --index 1 node ping 10.0.1.2
 ```
 
-From `node2` ping the "internet" namespace:
+From the second node ping an address in the internet service:
 
 ```
-docker-compose -f examples/test2-compose.yaml exec node2 ping 8.8.8.8
+docker-compose -f examples/test2-compose.yaml exec --index 2 node ping 8.8.8.8
+```
+
+Scale the nodes from 2 to 5 and then ping from first node from the fifth:
+
+```
+docker-compose -f examples/test2-compose.yaml up -d --scale node=5
+docker-compose -f examples/test2-compose.yaml exec --index 5 node ping 10.0.1.1
 ```
 
 
-### test3: network config file only (no compose)
+### test3: network config file only (no compose) and variable templating
 
-In terminal 1, start a container named `ZZZ_node`:
+#### test3 with docker
 
-```
-docker run -it --name=ZZZ_node --rm --cap-add NET_ADMIN --network none alpine sh
-```
-
-In terminal 2, start the conlink container `ZZZ_network` that will
-setup a network configuration that is connected to the `ZZZ_node`
-container:
+Start two containers named `ZZZ_node_1` and `ZZZ_node_2`.
 
 ```
-./conlink-start.sh -v --mode docker --host-mode docker --network-file examples/test3-network.yaml -- --name ZZZ_network --rm -e NETWORK_NAME=ZZZ_network -e NODE_NAME=ZZZ_node
+docker run --name=ZZZ_node_1 --rm -d --network none alpine sleep 864000
+docker run --name=ZZZ_node_2 --rm -d --network none alpine sleep 864000
 ```
 
-In terminal 1, ping the `internet` namespace within the network
-configuration setup by the `conlink` container.
+Start the conlink container `ZZZ_network` that will setup a network
+configuration that is connected to the other containers:
 
 ```
-ping 8.8.8.8
+./conlink-start.sh -v --mode docker --host-mode docker --network-file examples/test3-network.yaml -- --name ZZZ_network --rm -e NODE_NAME_1=ZZZ_node_1 -e NODE_NAME_2=ZZZ_node_2
 ```
 
-### test4: rootless podman with network config file
-
-Pull down upstream the podman images that will be used.
+In a separate terminal, ping the node 2 from node 1.
 
 ```
-podman pull docker.io/library/python:3-alpine
-podman pull docker.io/library/ubuntu:20.04
+docker exec -it ZZZ_node_1 ping 10.0.1.2
 ```
 
-In terminal 1, start a podman container named `ZZZ_node`:
+#### test3 with rootless podman
+
+Same as test3 but using rootless podman instead
+
+Start two containers named `ZZZ_node_1` and `ZZZ_node_2`.
 
 ```
-podman run -it --name=ZZZ_node --rm --cap-add NET_ADMIN --network none python:3-alpine sh
+podman run --name=ZZZ_node_1 --rm -d --network none alpine sleep 864000
+podman run --name=ZZZ_node_2 --rm -d --network none alpine sleep 864000
 ```
 
-In terminal 2, start the conlink container `ZZZ_network` that will
-setup a network configuration that is connected to the `ZZZ_node`
-container:
+Start the conlink container `ZZZ_network` that will setup a network
+configuration that is connected to the other containers:
 
 ```
-./conlink-start.sh -v --host-mode podman --network-file examples/test4-network.yaml -- --name ZZZ_network --rm -e NETWORK_NAME=ZZZ_network -e NODE_NAME=ZZZ_node
+./conlink-start.sh -v --mode podman --host-mode podman --network-file examples/test3-network.yaml -- --name ZZZ_network --rm -e NODE_NAME_1=ZZZ_node_1 -e NODE_NAME_2=ZZZ_node_2
 ```
 
-In terminal 1 (`ZZZ_node`), ping the `h4` podman container
-running inside the conlink podman container.
+In a separate terminal, ping the node 2 from node 1.
 
 ```
-ping 10.0.0.100
+podman exec -it ZZZ_node_1 ping 10.0.1.2
 ```
 
-From the `h1` host, issue an HTTP request to the web server running in
-the external `ZZZ_node` container.
+### test4: multiple compose files and container commands
+
+Docker-compose has the ability to specify multiple compose files that
+are merged together into a single runtime configuration. This test
+has conlink configuration spread across multiple compose files and
+a separate network config file. The network configuration appears at the
+top-level of the compose files and also within multiple compose
+service definitions.
+
+Run docker-compose using two compose files. The first defines the
+conlink/network container and a basic network configuration that
+includes a router and switch (`s0`). The second defines a single
+container (`node1`) and switch (`s1`) that is connected to the router
+defined in the first compose file.
 
 ```
-sudo nsenter -n -t $(pgrep -f mininet:h1) curl 10.0.0.104:84
+echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml" > .env
+docker-compose up --build --force-recreate
 ```
+
+Ping the router host from `node`:
+
+```
+docker-compose exec node1 ping 10.0.0.100
+```
+
+Restart the compose instance and add another compose file that defines
+two node2 replicas and a switch (`s2`) that is connected to the
+router.
+
+```
+echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml:examples/test4-multiple/nodes2-compose.yaml" > .env
+docker-compose up --build --force-recreate
+```
+
+From both `node2` replicas, ping `node1` across the switches and `r0` router:
+
+```
+docker-compose exec --index 1 node2 ping 10.1.0.1
+docker-compose exec --index 2 node2 ping 10.1.0.1
+```
+
+Restart the compose instance and add another compose file that starts
+conlink using an addition network file `web-network.yaml`. The network
+file starts up a simple web server on the router.
+
+```
+echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml:examples/test4-multiple/nodes2-compose.yaml:examples/test4-multiple/all-compose.yaml" > .env
+docker-compose up --build --force-recreate
+```
+
+From the second `node2`, perform a download from the web server running on the
+router host:
+
+```
+docker-compose exec --index 2 node2 wget -O- 10.0.0.100
+```
+
+Remove the `.env` file as a final cleanup step:
+
+```
+rm .env
+```
+
 
 ### test5: conlink on two hosts with overlay connectivity via geneve
 
-On host 1 run conlink like this:
+Launch a compose instance on host 1 and point it at host 2:
 
 ```
-REMOTE="ADDRESS_OF_HOST_2"
-./conlink-start.sh -v --host-mode podman --network-file examples/test5-geneve.yaml -- --rm --publish 6081:6081/udp -e REMOTE=${REMOTE} -e NODE_IP=192.168.100.1
+echo "REMOTE=ADDRESS_OF_HOST_2" > .env
+echo "NODE_IP=192.168.100.1" > .env \
+docker-compose --env-file .env -f examples/test5-geneve-compose.yaml up
 ```
 
+Launch another compose instance on host 2 and point it at host 1:
 On host 2 run conlink like this:
 
 ```
-REMOTE="ADDRESS_OF_HOST_1"
-./conlink-start.sh -v --host-mode podman --network-file examples/test5-geneve.yaml -- --rm --publish 6081:6081/udp -e REMOTE=${REMOTE} -e NODE_IP=192.168.100.2
+echo "REMOTE=ADDRESS_OF_HOST_1" > .env
+echo "NODE_IP=192.168.100.2" >> .env \
+docker-compose --env-file .env -f examples/test5-geneve-compose.yaml up
 ```
 
 On host 1, start a tcpdump on the main interface capturing Geneve
@@ -160,29 +333,21 @@ On host 1, start a tcpdump on the main interface capturing Geneve
 sudo tcpdump -nli eth0 port 6081
 ```
 
-In a different window on host 1, start tcpdump within the "node1"
-network namespace created by conlink:
-
-```
-sudo nsenter -n -t $(pgrep -f mininet:node1) tcpdump -nli eth0
-```
-
 On host 2, start a ping within the "node1" network namespace created
 by conlink:
 
 ```
-sudo nsenter -n -t $(pgrep -f mininet:node1) ping 192.168.100.1
+docker-compose -f examples/test5-geneve-compose.yaml exec node ping 192.168.100.1
 ```
 
-On host 1 you should see encapsulated ping traffic on the host and
-encapsulated pings within the "node1" namespace.
+On host 1 you should see bi-directional encapsulated ping traffic on the host.
 
 
 ### test6: conlink on two hosts deployed with CloudFormation
 
 This test uses AWS CloudFormation to deploy two AWS EC2 instances that
 automatically install, configure, and start conlink (and dependencies)
-using the `test5-geneve.yaml` network configuration.
+using the `test5-geneve-compose.yaml` compose file.
 
 Authenticate with AWS and set the `MY_KEY`, `MY_VPC`, and `MY_SUBNET`
 variables to refer to a preexisting key pair name, VPC ID, and Subnet
@@ -205,106 +370,46 @@ Once the stack is finish deploying, show the outputs of the stack
 aws --region us-west-2 cloudformation describe-stacks --stack-name ${USER}-conlink-test6 | jq '.Stacks[0].Outputs'
 ```
 
-Use ssh to connect to instance 1 and 2 (as the "ubuntu" user) and then
-use nsenter to run tcpdump and ping as described for test5.
+Use ssh to connect to instance 1 and 2 (as the "ubuntu" user), then
+sudo to root and cd into `/root/conlink`. You can now run the tcpdump
+and ping test described for test5.
 
 
-### test7: multiple compose files
+### test7: MAC, MTU, and NetEm settings
 
-Docker-compose has the ability to specify multiple compose files that
-are merged together into a single runtime configuration. This test
-has conlink configuration spread across multiple compose files and
-a separate work config file. The network configuration appears at the
-top-level of the compose files and also within multiple compose
-service definitions.
+This example demonstrates using interface MAC, MTU, and NetEm (tc
+qdisc) settings.
 
-Run docker-compose using two compose files. The first defines the
-conlink/network container and a basic network configuration that
-includes a router and switch (`s0`). The second defines a single
-container (`node1`) and switch (`s1`) that is connected to the router
-defined in the first compose file.
+Start the test7 compose configuration:
 
 ```
-COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml
-docker-compose up --build --force-recreate
+docker-compose -f examples/test7-compose.yaml up --build --force-recreate
 ```
 
-Ping the router host from `node`:
+Show the links in both node containers to see that the MAC addresses
+are `00:0a:0b:0c:0d:0*` and the MTUs are set to `4111`.
 
 ```
-docker-compose exec node1 ping 10.0.0.100
+docker-compose -f examples/test7-compose.yaml exec --index 1 ip link
+docker-compose -f examples/test7-compose.yaml exec --index 2 ip link
 ```
 
-Restart the compose instance and add another compose file that defines
-two more containers (`node2a` and `node2b`) and a switch (`s2`) that
-is also connected to the router.
+Ping the second node from the first to show the the NetEm setting is
+adding 40ms delay in both directions (80ms roundtrip).
 
 ```
-COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml:examples/test7-multiple/nodes2-compose.yaml
-docker-compose up --build --force-recreate
+docker-compose -f examples/test7-compose.yaml exec --index 1 node ping 10.0.1.2
 ```
 
-From `node2a`, ping `node2a` across the switches and router:
+### test8: Connections to macvlan/vlan host interfaces
 
-```
-docker-compose exec node2a ping 10.1.0.1
-```
-
-Restart the compose instance and add another compose file that starts
-conlink using an addition network file `web-network.yaml`. The network
-file starts up a simple web server on the router.
-
-```
-COMPOSE_FILE=examples/test7-multiple/base-compose.yaml:examples/test7-multiple/node1-compose.yaml:examples/test7-multiple/nodes2-compose.yaml:examples/test7-multiple/all-compose.yaml
-docker-compose up --build --force-recreate
-```
-
-From `node2b`, perform a download from the web server running on the
-router host:
-
-```
-docker-compose exec node2b wget -O- 10.0.0.100
-```
-
-### test8: VLAN and MTU settings
-
-This example uses the iproute2 commmands to configure network
-interface settings like MTU and VLAN tagging.
-
-Start the test8 compose configuration:
-
-```
-docker-compose -f examples/test8-compose.yaml up --build --force-recreate
-```
-
-In the network container, start a tcpdump on node1's interface
-showing ethernet frame data (including VLAN tags):
-
-```
-docker-compose -f examples/test8-compose.yaml exec network tcpdump -nlei node1-eth0
-```
-
-From `node1` ping `node2` normally:
-
-```
-docker-compose -f examples/test8-compose.yaml exec node1 ping 10.0.1.2
-```
-
-From `node2` ping `node1` over the VLAN tagged interface:
-
-```
-docker-compose -f examples/test8-compose.yaml exec node2 ping 10.100.0.1
-```
-
-### test9: Connections to macvlan/vlan host interfaces
-
-This example has three nodes with web servers bound to local addresses.
-The first two node are connected to macvlan sub-interfaces of a host
-physical interface. The third node is connected to a VLAN
+This example has two nodes with web servers bound to local addresses.
+The first node is connected to a macvlan sub-interfaces of a host
+physical interface. The second node is connected to a VLAN
 sub-interface of the same host (using VLAN ID/tag 5). Static NAT
 (SNAT+DNAT) is setup inside each container to map the external
-address/interface to the internal address/interface where the web
-server is running.
+address/interface to the internal address/interface (dummy) where the
+web server is running.
 
 Create an environment file with the name of the parent host interface
 and the external IP addresses to assign to each container:
@@ -314,26 +419,61 @@ cat << EOF > .env
 HOST_INTERFACE=enp6s0
 NODE1_HOST_ADDRESS=192.168.0.32/24
 NODE2_HOST_ADDRESS=192.168.0.33/24
-NODE3_HOST_ADDRESS=192.168.5.3/24
 EOF
 ```
 
-Start the test9 compose configuration using the environment file:
+Start the test8 compose configuration using the environment file:
 
 ```
-docker-compose --env-file .env -f examples/test9-compose.yaml up --build --force-recreate
+docker-compose --env-file .env -f examples/test8-compose.yaml up --build --force-recreate
 ```
 
-Connect to the internal containers from an external host on your
-network (traffic between macvlan interfaces on the same host is
+Connect to the macvlan node (NODE1_HOST_ADDRESS) from an external host
+on your network (traffic to macvlan interfaces on the same host is
 prevented):
 
 ```
 ping -c1 192.168.0.32
-ping -c1 192.168.0.33
-curl 192.168.0.32:81
-curl 192.168.0.33:82
+curl 192.168.0.32
 ```
+
+Note: to connect to the vlan node (NODE2_HOST_ADDRESS) you will need
+to configure your physical switch/router with routing/connectivity to
+VLAN 5 on the same physical link to your host.
+
+## GraphViz network configuration rendering
+
+You can use d3 and GraphViz to create a visual graph rendering of
+a network configuration. First start a simple web server in the
+examples directory:
+
+```
+cd examples
+python3 -m http.server 8080
+```
+
+Use the `net2dot` script to transform a network
+configuration into a GraphViz data file (dot language). The `net2dot`
+script supports `--compose-file` and `--network-file` command line
+options. To render the network configuration for example test1, run
+the following in another window:
+
+```
+./net2dot --compose-file examples/test1-compose.yaml > examples/data.dot
+```
+
+Then load `http://localhost:8080` in your browser to see the rendered
+image.
+
+The file `examples/net2dot.yaml` contains a configuration that
+combines many different configuration elements (veth links, dummy
+interfaces, vlan type links, tunnels, etc).
+
+```
+./net2dot --network-file examples/net2dot.yaml > examples/data.dot
+```
+
+Then load `http://localhost:8080` in your browser.
 
 
 ## Copyright & License
