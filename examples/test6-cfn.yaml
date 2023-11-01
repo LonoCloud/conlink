@@ -88,10 +88,9 @@ Resources:
         # echo "podman ps" | sudo -i -u ubuntu bash
 
         ## Download conlink image and repo
-        docker pull lonocloud/conlink:config-and-cljs-refactor
+        docker pull lonocloud/conlink
         git clone https://github.com/LonoCloud/conlink /root/conlink
         cd /root/conlink
-        git checkout -b config-and-cljs-refactor origin/config-and-cljs-refactor
 
         #cfn-signal -e 0 --stack ${AWS::StackName} --region ${AWS::Region} --resource WaitHandle
         cat > /tmp/signal << EOF
