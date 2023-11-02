@@ -15,7 +15,7 @@ links:
   - {type: macvlan, service: nodeH, dev: mv0, outer-dev: eni1, mode: bridge}
 
 tunnels:
-  - {type: geneve, bridge: s1, vni: 1001, remote: "${REMOTE1}"}
-  - {type: geneve, bridge: s3, vni: 1002, remote: "${REMOTE2}"}
+  - {type: geneve, bridge: s1, vni: 1001, remote: "10.0.0.1"}
+  - {type: geneve, bridge: s3, vni: 1002, remote: "10.0.0.2"}
 
 

@@ -6,6 +6,7 @@
     "dockerode": "^3.3.4",
     "nbb": "^1.2.179",
     "neodoc": "^2.0.2",
+    "ts-graphviz": "^1.8.1",
     "yaml": "^2.2.1"
   },
   "devDependencies": {
