@@ -1,3 +1,6 @@
+;; Copyright (c) 2023, Viasat, Inc
+;; Licensed under MPL 2.0
+
 (ns conlink.util
   (:require [cljs.pprint :refer [pprint]]
             [clojure.string :as S]

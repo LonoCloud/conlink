@@ -1,4 +1,5 @@
-#!/usr/bin/env nbb
+;; Copyright (c) 2023, Viasat, Inc
+;; Licensed under MPL 2.0
 
 (ns conlink.core
   (:require [clojure.string :as S]
