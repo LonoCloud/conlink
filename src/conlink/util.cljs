@@ -88,8 +88,8 @@
                       (condp = sep
                         ":-" (if unset-or-null? value (get env braced))
                         "-"  (if unset? value (get env braced))
-                        ":?" (when unset-or-null? (throw (js/Error value)))
-                        "?"  (when unset? (throw (js/Error value)))))
+                        ":?" (if unset-or-null? (throw (js/Error value)) (get env braced))
+                        "?"  (if unset? (throw (js/Error value)) (get env braced))))
             braced (get env braced "")
             invalid (str "$" invalid)))))
 
