@@ -5,9 +5,6 @@ x-network:
     - {service: r0, bridge: s1, dev: e1, ip: "10.1.0.100/24"}
 
 services:
-  network:
-    command: /app/build/conlink.js --compose-file ${COMPOSE_FILE:-examples/test4-multiple/node1-compose.yaml}
-
   node1:
     image: alpine
     network_mode: none

@@ -258,8 +258,7 @@ container (`node1`) and switch (`s1`) that is connected to the router
 defined in the first compose file.
 
 ```
-echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml" > .env
-docker-compose up --build --force-recreate
+MODES_DIR=./examples/test4-multiple/modes ./mdc node1 up --build --force-recreate
 ```
 
 Ping the router host from `node`:
@@ -273,8 +272,7 @@ two node2 replicas and a switch (`s2`) that is connected to the
 router.
 
 ```
-echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml:examples/test4-multiple/nodes2-compose.yaml" > .env
-docker-compose up --build --force-recreate
+MODES_DIR=./examples/test4-multiple/modes ./mdc node1,nodes2 up --build --force-recreate
 ```
 
 From both `node2` replicas, ping `node1` across the switches and `r0` router:
@@ -289,8 +287,7 @@ conlink using an addition network file `web-network.yaml`. The network
 file starts up a simple web server on the router.
 
 ```
-echo "COMPOSE_FILE=examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml:examples/test4-multiple/nodes2-compose.yaml:examples/test4-multiple/all-compose.yaml" > .env
-docker-compose up --build --force-recreate
+MODES_DIR=./examples/test4-multiple/modes ./mdc node1,nodes2,web up --build --force-recreate
 ```
 
 From the second `node2`, perform a download from the web server running on the
@@ -298,6 +295,14 @@ router host:
 
 ```
 docker-compose exec --index 2 node2 wget -O- 10.0.0.100
+```
+
+We can simplify the above launch by using the `all` mode, which contains
+depends on `node1`, `nodes2`, and `web`.  Each of those modes depends on
+`base`, so there's no need to specify that again (transitive deps).
+
+```
+MODES_DIR=./examples/test4-multiple/modes ./mdc all up --build --force-recreate
 ```
 
 Remove the `.env` file as a final cleanup step:

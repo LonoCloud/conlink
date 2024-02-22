@@ -10,7 +10,7 @@ services:
         - {bridge: s0, dev: e0, ip: "10.0.0.100/24"}
 
   network:
-    build: {context: ../..}
+    build: {context: .}
     image: conlink
     pid: host
     network_mode: none
@@ -19,7 +19,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker:/var/lib/docker
-      - ../../:/test
+      - ./:/test
     working_dir: /test
-    command: /app/build/conlink.js --compose-file ${COMPOSE_FILE:-examples/test4-multiple/base-compose.yaml}
+    command: /app/build/conlink.js --compose-file ${COMPOSE_FILE:?COMPOSE_FILE must be set}
 

@@ -1,5 +1,0 @@
-version: "2.4"
-
-services:
-  network:
-    command: /app/build/conlink.js --compose-file ${COMPOSE_FILE:-examples/test4-multiple/base-compose.yaml:examples/test4-multiple/node1-compose.yaml:examples/test4-multiple/nodes2.yaml:examples/test4-multiple/all-compose.yaml} --network-file examples/test4-multiple/web-network.yaml

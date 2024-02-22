@@ -1,0 +1,5 @@
+version: "2.4"
+
+x-network:
+  commands:
+    - {service: r0, command: "python3 -m http.server 80"}

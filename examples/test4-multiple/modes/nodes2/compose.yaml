@@ -4,11 +4,7 @@ x-network:
   links:
     - {service: r0, bridge: s2, dev: e2, ip: "10.2.0.100/24"}
 
-
 services:
-  network:
-    command: /app/build/conlink.js --compose-file ${COMPOSE_FILE:-examples/test4-multiple/nodes2-compose.yaml}
-
   node2:
     image: alpine
     scale: 2
@@ -17,4 +13,3 @@ services:
     x-network:
       links:
         - {bridge: s2, ip: "10.2.0.1/16", route: "default via 10.2.0.100"}
-
