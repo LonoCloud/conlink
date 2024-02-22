@@ -1,0 +1,108 @@
+#!/bin/bash
+
+set -e
+shopt -s dotglob  # recursive copy of dot files too
+
+die() { echo >&2 "${*}"; exit 1; }
+vecho() { [ "${VERBOSE}" ] && echo >&2 "${*}" || true; }
+realpath() { [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"; }
+
+[ "${*}" ] || die "Usage: ${0} MODES [DOCKER-COMPOSE-ARGS]"
+
+VERBOSE="${VERBOSE:-}"
+MODES_DIR="${MODES_DIR:-./modes}"
+ENV_FILE="${ENV_FILE:-.env}"
+MDC_FILES_DIR="${MDC_FILES_DIR:-./.files}"
+LS=$(which ls)
+RESOLVE_DEPS="${RESOLVE_DEPS-./node_modules/@lonocloud/resolve-deps/resolve-deps.py}"
+DOCKER_COMPOSE="${DOCKER_COMPOSE:-docker-compose}"
+
+MODE_SPEC="${1}"; shift
+if [ "${RESOLVE_DEPS}" ]; then
+    MODES="$(${RESOLVE_DEPS} "${MODES_DIR}" ${MODE_SPEC})"
+else
+    MODES="${MODE_SPEC//,/ }"
+fi
+
+echo >&2 "MODES:    ${MODES}"
+vecho "ENV_FILE: ${ENV_FILE}"
+
+declare -A FINISHED
+COMPOSE_FILE=./.compose-empty.yaml
+COMPOSE_PROFILES=
+MDC_MODE_DIRS=
+cat /dev/null > ${ENV_FILE}-mdc-tmp
+echo -e "version: '2.4'\nservices: {}" > ./.compose-empty.yaml
+
+vecho "Removing ${MDC_FILES_DIR}"
+case "$(basename ${MDC_FILES_DIR})" in
+    .|/) die "MDC_FILES_DIR must not be '.' or '/'";;
+esac
+[ -d "${MDC_FILES_DIR}" ] && rm -r${VERBOSE:+v} ${MDC_FILES_DIR}/
+mkdir -p "${MDC_FILES_DIR}"
+
+for mode in ${MODES}; do
+    # Only process each mode once
+    [ "${FINISHED[${mode}]}" ] && continue
+    FINISHED["${mode}"]=1
+
+    # mode dir must exist
+    [ -d "${MODES_DIR}/${mode}" ] || \
+        die "No mode dir found for ${mode}"
+
+    MDC_MODE_DIRS="${MDC_MODE_DIRS},${MODES_DIR}/${mode}"
+
+    # mode can refer to a compose file in multiple ways
+    cfiles="${MODES_DIR}/${mode}/compose.yaml ${MODES_DIR}/${mode}/compose.yml ${MODES_DIR}/${mode}/docker-compose.yaml ${MODES_DIR}/${mode}/docker-compose.yml"
+    for cfile in ${cfiles}; do
+        if [ -e "${cfile}" ]; then
+            COMPOSE_FILE="${COMPOSE_FILE}:${cfile}"
+            break
+        fi
+    done
+
+    # Add MODE_ prefixed compose profile for each mode
+    COMPOSE_PROFILES="${COMPOSE_PROFILES},MODE_${mode}"
+
+    # if there is a mode specific env file then include it
+    efiles="${MODES_DIR}/${mode}/env ${MODES_DIR}/${mode}/.env"
+    for efile in ${efiles}; do
+        if [ -e "${efile}" ]; then
+            echo "### mdc begin mode ${mode}" >> ${ENV_FILE}-mdc-tmp
+            vecho "cat ${efile} >> ${ENV_FILE}-mdc-tmp"
+            cat ${efile} >> ${ENV_FILE}-mdc-tmp
+            echo "### mdc end mode ${mode}" >> ${ENV_FILE}-mdc-tmp
+        fi
+    done
+
+    # if there are mode specific files then copy them to MDC_FILES_DIR
+    if [ -d "${MODES_DIR}/${mode}" ]; then
+        for vfd in $(cd ${MODES_DIR}/${mode} && $LS -d */files 2>/dev/null || true); do
+            dest=${MDC_FILES_DIR}/${vfd%/files}
+            mkdir -p ${dest}
+            vecho cp -a ${MODES_DIR}/${mode}/${vfd}/* ${dest}
+            cp -a ${MODES_DIR}/${mode}/${vfd}/* ${dest}
+        done
+    fi
+done
+
+COMPOSE_FILE="${COMPOSE_FILE#:}"
+vecho "COMPOSE_FILE: ${COMPOSE_FILE}"
+echo "COMPOSE_FILE=${COMPOSE_FILE}" >> ${ENV_FILE}-mdc-tmp
+echo "COMPOSE_DIR=$(realpath $(dirname ${ENV_FILE}))" >> ${ENV_FILE}-mdc-tmp
+
+COMPOSE_PROFILES="${COMPOSE_PROFILES#,}"
+vecho "COMPOSE_PROFILES: ${COMPOSE_PROFILES}"
+echo "COMPOSE_PROFILES=${COMPOSE_PROFILES}" >> ${ENV_FILE}-mdc-tmp
+
+MDC_MODE_DIRS="${MDC_MODE_DIRS#,}"
+vecho "MDC_MODE_DIRS: ${MDC_MODE_DIRS}"
+echo "MDC_MODE_DIRS=\"${MDC_MODE_DIRS}\"" >> ${ENV_FILE}-mdc-tmp
+
+vecho mv ${ENV_FILE}-mdc-tmp ${ENV_FILE}
+mv ${ENV_FILE}-mdc-tmp ${ENV_FILE}
+
+if [ "${*}" ]; then
+    vecho "Running: ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" ${@}"
+    exec ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" "${@}"
+fi

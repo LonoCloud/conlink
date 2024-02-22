@@ -6,3 +6,5 @@ podman.sock*
 .nfs*
 examples/*.swp
 examples/.nfs*
+.compose-empty.yaml
+.env
