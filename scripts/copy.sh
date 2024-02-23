@@ -26,9 +26,11 @@ dst_dir="${1}"; shift || die 2 "Usage: ${0} [-T|--template] SRC_DIR DST_DIR"
   cp -a "${src}" "${dst}" || die 1 "Failed to copy file"
   # TODO: make this configurable
   chown root.root "${dst}" || die 1 "Unable to set ownership"
+  chmod +w "${dst}" || die 1 "Unable to make writable"
 
   [ -z "${TEMPLATE}" ] && continue
 
+  tmpfile="$(mktemp)"
   # match all {{FOO}} style variables and replace from environment
   for v in $(cat "${dst}" | grep -o '{{[^ }{]*}}' | sed 's/[}{]//g' | sort -u); do
     if set | grep -qs "^${v}="; then
@@ -36,9 +38,11 @@ dst_dir="${1}"; shift || die 2 "Usage: ${0} [-T|--template] SRC_DIR DST_DIR"
           | sed "s/^['\"]\(.*\)['\"]$/\1/" \
           | sed 's/[\/&]/\\&/g')
       echo "Replacing '{{${v}}}' with '${val}' in '${dst}'"
-      sed -i "s/{{${v}}}/${val}/g" "${dst}"
+      sed "s/{{${v}}}/${val}/g" "${dst}" > "${tmpfile}"
+      cp "${tmpfile}" "${dst}"
     fi
   done
+  rm -f "${tmpfile}"
 done
 
 if [ "${*}" ]; then
