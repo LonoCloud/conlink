@@ -395,8 +395,8 @@ Show the links in both node containers to see that the MAC addresses
 are `00:0a:0b:0c:0d:0*` and the MTUs are set to `4111`.
 
 ```
-docker-compose -f examples/test7-compose.yaml exec --index 1 ip link
-docker-compose -f examples/test7-compose.yaml exec --index 2 ip link
+docker-compose -f examples/test7-compose.yaml exec --index 1 node ip link
+docker-compose -f examples/test7-compose.yaml exec --index 2 node ip link
 ```
 
 Ping the second node from the first to show the the NetEm setting is
