@@ -186,11 +186,11 @@ From the second node ping an address in the internet service:
 docker-compose -f examples/test2-compose.yaml exec --index 2 node ping 8.8.8.8
 ```
 
-Scale the nodes from 2 to 5 and then ping from first node from the fifth:
+Scale the nodes from 2 to 5 and then ping the fifth node from the second:
 
 ```
 docker-compose -f examples/test2-compose.yaml up -d --scale node=5
-docker-compose -f examples/test2-compose.yaml exec --index 5 node ping 10.0.1.1
+docker-compose -f examples/test2-compose.yaml exec --index 2 node ping 10.0.1.5
 ```
 
 
@@ -281,6 +281,14 @@ From both `node2` replicas, ping `node1` across the switches and `r0` router:
 docker-compose exec --index 1 node2 ping 10.1.0.1
 docker-compose exec --index 2 node2 ping 10.1.0.1
 ```
+
+From `node1`, ping both `node2` replicas across the switches and `r0` router:
+
+```
+docker-compose exec node1 ping 10.2.0.1
+docker-compose exec node1 ping 10.2.0.2
+```
+
 
 Restart the compose instance and add another compose file that starts
 conlink using an addition network file `web-network.yaml`. The network
