@@ -1,5 +1,6 @@
 # conlink: Declarative Low-Level Networking for Containers
 
+
 Create (layer 2 and layer 3) networking between containers using
 a declarative configuration.
 
@@ -33,6 +34,18 @@ what the other containers require then those additional capabilities
 will also be required for the conlink container. In particular, if the
 container uses systemd, then it will likely use `SYS_NICE` and
 `NET_BROADCAST` and conlink will likewise need those capabilities.
+
+### Bridging: Open vSwtich/OVS or Linux bridge
+
+Conlink creates bridges/switches and connects veth container links to
+those bridges (specified by `bridge:` in the link specification).
+By default, conlink will attempt to create Open vSwitch/OVS bridges
+for these connections, however, if the kernel does not provide support
+(`openvswitch` kernel module loaded), then conlink will fallback to
+using standard Linux bridges. The fallback behavior can be changed by
+setting the `--bridge-mode` option to either "ovs" or "linux". If the
+bridge mode is set to "ovs" then conlink will fail to start if the
+`openvswitch` kernel module is not detected.
 
 ## Network Configuration Syntax
 

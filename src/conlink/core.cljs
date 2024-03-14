@@ -27,9 +27,9 @@ General Options:
   -v, --verbose                     Show verbose output (stderr)
                                     [env: VERBOSE]
   --show-config                     Print loaded network config JSON and exit
-  --bridge-mode BRIDGE-MODE         Bridge mode (ovs or linux) to use for
-                                    bridge/switch connections
-                                    [default: ovs]
+  --bridge-mode BRIDGE-MODE         Bridge mode (ovs, linux, or auto)
+                                    to use for bridge/switch connections
+                                    [default: auto] [env: CONLINK_BRIDGE_MODE]
   --network-file NETWORK-FILE...    Network config file
   --compose-file COMPOSE-FILE...    Docker compose file with network config
   --compose-project NAME            Docker compose project name for resolving
@@ -651,17 +651,38 @@ General Options:
     (fatal 2 "Could not find config-schema" orig-config-schema)))
 
 (defn startup-checks
-  "Check startup state and exit if openvswitch kernel module is not
-  loaded or if no docker or podman connection could be established."
-  [bridge-mode docker podman]
+  "Check startup state and return map of :bridge-mode, :docker, and
+  :podman. If bridge-mode is :auto then return :ovs if the
+  'openvswitch' kernel module is loaded otherwise fall back to :linux.
+  Exit with an error if bridge-mode is :ovs and the 'openvswitch'
+  kernel module is not loaded or if neither a docker or podman
+  connection could be established."
+  [{:keys [bridge-mode docker-socket podman-socket]}]
   (P/let
-    [kmod-okay? (if (= :ovs bridge-mode)
-                  (kmod-loaded? "openvswitch")
-                  true)]
-    (when (not kmod-okay?)
-      (fatal 1 "bridge-mode is 'ovs', but no 'openvswitch' module loaded"))
+    [{:keys [info warn]} @ctx
+     ovs? (kmod-loaded? "openvswitch")
+     bridge-mode (condp = [bridge-mode ovs?]
+                   [:auto true]
+                   :ovs
+
+                   [:auto false]
+                   (do
+                     (warn (str "bridge-mode is 'auto' but no 'openvswitch' "
+                                "kernel module loaded, so using 'linux'"))
+                    :linux)
+
+                   [:ovs false]
+                   (fatal 1 (str "bridge-mode is 'ovs', but no 'openvswitch' "
+                                 "kernel module loaded"))
+
+                   bridge-mode)
+     docker (docker-client docker-socket)
+     podman (docker-client podman-socket)]
     (when (and (not docker) (not podman))
-      (fatal 1 "Failed to start either docker or podman client/listener"))))
+      (fatal 1 "Failed to start either docker or podman client/listener"))
+    {:bridge-mode bridge-mode
+     :docker docker
+     :podman podman}))
 
 (defn server
   "Process:
@@ -691,7 +712,7 @@ General Options:
      _ (arg-checks opts)
      _ (info (str "User options:\n" (indent-pprint-str opts "  ")))
 
-     {:keys [network-file compose-file compose-project bridge-mode]} opts
+     {:keys [network-file compose-file compose-project]} opts
      env (js->clj (js/Object.assign #js {} js/process.env))
      self-pid js/process.pid
      schema (load-config (:config-schema opts))
@@ -703,9 +724,7 @@ General Options:
          (println (js/JSON.stringify (->js network-config)))
          (js/process.exit 0))
 
-     docker (docker-client (:docker-socket opts))
-     podman (docker-client (:podman-socket opts))
-     _ (startup-checks bridge-mode docker podman)
+     {:keys [bridge-mode docker podman]} (startup-checks opts)
      self-cid (get-container-id)
      self-container-obj (when self-cid
                           (get-container (or docker podman) self-cid))
