@@ -6,10 +6,19 @@ a declarative configuration.
 
 ## Prerequisites
 
+General:
+* docker
 * docker-compose version 1.25.4 or later.
-* `openvswitch` kernel module loaded on the host
-* `geneve` (and/or `vxlan`) kernel module loaded on the host (only
-  needed for `test5-geneve-compose` example)
+
+Other:
+* For Open vSwtich (OVS) bridging, the `openvswitch` kernel module
+  must loaded on the host system (where docker engine is running).
+* For podman usage (e.g. second part of `test3`), podman is required.
+* For remote connections/links (e.g. `test5`), the `geneve` (and/or
+  `vxlan`) kernel module must be loaded on the host system (where
+  docker engine is running)
+* For CloudFormation deployment (e.g. `test6`), the AWS CLI is
+  required.
 
 ## Usage Notes
 
