@@ -71,8 +71,8 @@ The following table describes the link properties:
 | route     | *          | string     |         | ip route add args        |
 | nat       | *          | IP         |         | DNAT/SNAT to IP          |
 | netem     | *          | string     |         | tc qdisc NetEm options   |
-| mode      | 5          | IP         |         | virt intf mode           |
-| vlanid    | vlan       | IP         |         | VLAN ID                  |
+| mode      | 5          | string     |         | virt intf mode           |
+| vlanid    | vlan       | number     |         | VLAN ID                  |
 
 - 1 - veth, dummy, vlan, ipvlan, macvlan, ipvtap, macvtap
 - 2 - defaults to outer compose service
@@ -261,7 +261,7 @@ defined in the first compose file.
 MODES_DIR=./examples/test4-multiple/modes ./mdc node1 up --build --force-recreate
 ```
 
-Ping the router host from `node`:
+Ping the router host from `node1`:
 
 ```
 docker-compose exec node1 ping 10.0.0.100
