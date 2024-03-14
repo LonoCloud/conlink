@@ -1,6 +1,6 @@
 {
   "name": "conlink",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "conlink -  Declarative Low-Level Networking for Containers",
   "repository": "https://github.com/LonoCloud/conlink",
   "license": "SEE LICENSE IN LICENSE",
