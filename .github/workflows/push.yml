@@ -13,5 +13,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: stub step
-        run: "echo stub stub"
+      - name: npm install
+        run: npm install
+
+      - name: compose build of conlink
+        run: docker-compose -f examples/test1-compose.yaml build
+
+      - name: "./run-tests.sh"
+        timeout-minutes: 5
+        run: time ./run-tests.sh
