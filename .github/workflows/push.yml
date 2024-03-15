@@ -1,0 +1,17 @@
+name: Push (compose tests)
+
+on:
+  push: {}
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch: {}
+
+jobs:
+  compose-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: stub step
+        run: "echo stub stub"
