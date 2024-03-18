@@ -1,5 +1,10 @@
 version: "2.4"
 
+services:
+  r0:
+    volumes:
+      - ./scripts:/scripts
+
 x-network:
   commands:
     - {service: r0, command: "python3 -m http.server 80"}
