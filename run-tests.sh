@@ -10,6 +10,7 @@ declare FAIL=0
 die() { echo >&2 "${*}"; exit 1; }
 vecho() { [ "${VERBOSE}" ] && echo "${*}" || true; }
 dc() { docker-compose "${@}"; }
+mdc() { ./mdc "${@}" || die "mdc invocation failed"; }
 
 dc_init() {
   local cont="${1}" idx="${2}"
@@ -94,13 +95,13 @@ echo -e "\n\n>>> test4: multiple compose / mdc"
 GROUP=test4
 export MODES_DIR=./examples/test4-multiple/modes
 
-./mdc node1
+mdc node1
 dc_init; dc_wait 10 r0_1 'ip addr | grep "10\.1\.0\.100"' \
     || die "test4 node1 startup failed"
 echo " >> Ping the r0 router host from node1"
 dc_test node1_1 ping -c1 10.0.0.100
 
-./mdc node1,nodes2
+mdc node1,nodes2
 dc_init; dc_wait 10 node2_2 'ip addr | grep "10\.2\.0\.2"' \
     || die "test4 node1,nodes2 startup failed"
 echo " >> From both node2 replicas, ping node1 across the r0 router"
@@ -110,7 +111,7 @@ echo " >> From node1, ping both node2 replicas across the r0 router"
 dc_test node1 ping -c1 10.2.0.1
 dc_test node1 ping -c1 10.2.0.2
 
-./mdc all
+mdc all
 dc_init; dc exec -T r0 /scripts/wait.sh -t 10.0.0.100:80 \
     || die "test4 all startup failed"
 echo " >> From node2, download from the web server in r0"
