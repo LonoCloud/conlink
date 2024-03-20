@@ -17,6 +17,7 @@ LS=$(which ls)
 RESOLVE_DEPS="${RESOLVE_DEPS-./node_modules/@lonocloud/resolve-deps/resolve-deps.py}"
 DOCKER_COMPOSE="${DOCKER_COMPOSE:-docker-compose}"
 
+[ -f "${RESOLVE_DEPS}" ] || die "Missing ${RESOLVE_DEPS}. Perhaps 'npm install'?"
 MODE_SPEC="${1}"; shift
 if [ "${RESOLVE_DEPS}" ]; then
     MODES="$(${RESOLVE_DEPS} "${MODES_DIR}" ${MODE_SPEC})"
