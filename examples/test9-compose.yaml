@@ -1,0 +1,40 @@
+# This file demonstrates using different bridge modes and
+# usage of the --default-brige-mode parameter.
+
+version: "2.4"
+
+services:
+  network:
+    build: {context: ../}
+    image: conlink
+    pid: host
+    network_mode: none
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, NET_BROADCAST, IPC_LOCK]
+    security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker
+      - ./:/test
+    command: /app/build/conlink.js --default-bridge-mode linux --compose-file /test/test9-compose.yaml
+
+  Ndefault: &node
+    image: alpine
+    network_mode: none
+    scale: 2
+    command: sleep Infinity
+
+  Nauto:   { <<: *node }
+  Nlinux:  { <<: *node }
+  Novs:    { <<: *node }
+
+x-network:
+  links:
+    - {bridge: s1, service: Ndefault, ip: 10.0.1.1/24}
+    - {bridge: s2, service: Nauto,    ip: 10.0.2.1/24}
+    - {bridge: s3, service: Nlinux,   ip: 10.0.3.1/24}
+    - {bridge: s4, service: Novs,     ip: 10.0.4.1/24}
+  bridges:
+    - {bridge: s2, mode: auto}
+    - {bridge: s3, mode: linux}
+    - {bridge: s4, mode: ovs}
+

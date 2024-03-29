@@ -27,7 +27,7 @@ General Options:
   -v, --verbose                     Show verbose output (stderr)
                                     [env: VERBOSE]
   --show-config                     Print loaded network config JSON and exit
-  --bridge-mode BRIDGE-MODE         Bridge mode (ovs, linux, or auto)
+  --default-bridge-mode BRIDGE-MODE Default bridge mode (ovs, linux, or auto)
                                     to use for bridge/switch connections
                                     [default: auto] [env: CONLINK_BRIDGE_MODE]
   --network-file NETWORK-FILE...    Network config file
@@ -58,10 +58,11 @@ General Options:
 (def LINK-ADD-OPTS [:ip :mac :route :mtu :nat :netem :mode :vlanid :remote :vni])
 (def INTF-MAX-LEN 15)
 
-(def ctx (atom {:error #(apply Eprintln "ERROR:" %&)
-                :warn  #(apply Eprintln "WARNING:" %&)
-                :log   Eprintln
-                :info  list}))
+(def ctx (atom {:error        #(apply Eprintln "ERROR:" %&)
+                :warn         #(apply Eprintln "WARNING:" %&)
+                :log          Eprintln
+                :info         #(identity nil)
+                :kmod-ovs?    false}))
 
 ;; Simple utility functions
 (defn json-str [obj]
@@ -94,12 +95,13 @@ General Options:
     net-cfg))
 
 (defn enrich-link
-  "Add default values to a link:
+  "Resolve bridge name to full bridge map.
+  Add default values to a link:
     - type: veth
     - dev: eth0
     - mtu: 9000 (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
-  [{:as link :keys [type base bridge ip vlanid]}]
+  [{:as link :keys [type base bridge ip vlanid]} bridges]
   (let [type (keyword (or type "veth"))
         base-default (cond (= :veth type)     :conlink
                            (VLAN-TYPES type)  :host
@@ -110,18 +112,52 @@ General Options:
                {:type type
                 :dev  (get link :dev "eth0")
                 :base base}
+               (when bridge
+                 {:bridge (get bridges bridge)})
                (when (not (VLAN-TYPES type))
                  {:mtu  (get link :mtu 9000)}))]
     link))
 
+(defn enrich-bridge
+  "If bridge mode is :auto then return :ovs if the 'openvswitch' kernel module
+  is loaded otherwise fall back to :linux. Exit with an error if mode is :ovs
+  and the 'openvswitch' kernel module is not loaded."
+  [{:as bridge-opts :keys [bridge mode]}]
+  (let [{:keys [warn default-bridge-mode kmod-ovs?]} @ctx
+        mode (keyword (or mode default-bridge-mode))
+        _ (when (and (= :ovs mode) (not kmod-ovs?))
+            (fatal 1 (str "bridge " bridge " mode is 'ovs', "
+                          "but no 'openvswitch' kernel module loaded")))
+        _ (when (and (= :auto mode) (not kmod-ovs?))
+            (warn (str "bridge " bridge " mode is 'auto', "
+                       " but no 'openvswitch' kernel module loaded, "
+                       " so falling back to 'linux'")))
+        mode (if (= :auto mode)
+              (if kmod-ovs? :ovs :linux)
+              mode)]
+    (assoc bridge-opts :mode mode)))
+
 (defn enrich-network-config
-  "Validate and update each link (enrich-link) and add
-  :containers and :services maps with restructured link and command
-  configuration to provide a more efficient structure for looking up
-  configuration later."
-  [{:as cfg :keys [links commands]}]
-  (let [links (vec (map enrich-link links))
-        cfg (merge cfg {:links links :containers {} :services {}})
+  "Validate and update each bridge (enrich-bridge) and link (enrich-link) and
+  add :bridges, :containers, and :services maps with restructured bridge, link,
+  and command configuration to provide a more efficient structure for looking
+  up configuration later."
+  [{:as cfg :keys [links commands bridges]}]
+  (let [bridge-map (reduce (fn [acc b] (assoc acc (:bridge b) b))
+                           {} bridges)
+        ;; Add bridges specified in links only
+        all-bridges (reduce (fn [bs b]
+                              (assoc bs b (get bs b {:bridge b})))
+                            bridge-map
+                            (keep :bridge links))
+        ;; Enrich each bridge
+        bridges (reduce (fn [bs [k v]] (assoc bs k (enrich-bridge v)))
+                        {} all-bridges)
+        links (mapv #(enrich-link % bridges) links)
+        cfg (merge cfg {:links links
+                        :bridges bridges
+                        :containers {}
+                        :services {}})
         rfn (fn [kind cfg {:as x :keys [container service]}]
               (cond-> cfg
                 container (update-in [:containers container kind] conjv x)
@@ -153,15 +189,17 @@ General Options:
                         "\nUser config:\n" (indent-pprint-str data "  "))
                       "\nValidation errors:\n" msg))))))
 
+
+;;; Runtime state related
+
 (defn gen-network-state
   "Generate network state/context from network configuration. Adds
   empty :devices map and :bridges map containing nil status for
   each bridge mentioned in the network config :links and :tunnels."
-  [{:keys [links tunnels]}]
-  (reduce (fn [state bridge]
-            (assoc-in state [:bridges bridge :status] nil))
-          {:devices {} :bridges {}}
-          (keep :bridge (concat links tunnels))))
+  [{:keys [links tunnels bridges]}]
+  {:devices {}
+   :bridges (into {} (for [[k v] bridges]
+                       [k (merge v {:status nil :links #{}})]))})
 
 (defn link-outer-dev
   "outer-dev format:
@@ -298,81 +336,90 @@ General Options:
           res (run cmd {:quiet true})]
     (and (= 0 (:code res)) (= kmod (trim (:stdout res))))))
 
-;;; Link and bridge commands
+;;; Bridge commands
 
 (defn check-no-bridge
   "Check that no bridge named 'bridge' is currently configured.
-  Bridge type is dependent on bridge-mode (:ovs or :linux). Exit with
+  Bridge type is dependent on mode (:ovs or :linux). Exit with
   error if the bridge already exists."
-  [bridge]
-  (P/let [{:keys [info bridge-mode]} @ctx
+  [{:keys [bridge mode]}]
+  (P/let [{:keys [info]} @ctx
           cmd (get {:ovs (str "ovs-vsctl list-ifaces " bridge)
                     :linux (str "ip link show type bridge " bridge)}
-                   bridge-mode)
-          res (run cmd {:quiet true})]
-    (if (= 0 (:code res))
-      ;; TODO: maybe mark as :exists and use without cleanup
-      (fatal 1 (str "Bridge " bridge " already exists"))
-      (if (re-seq #"(does not exist|no bridge named)" (:stderr res))
-        true
-        (fatal 1 (str "Unable to run '" cmd "': " (:stderr res)))))))
+                   mode)]
+    (if (not cmd)
+      true
+      (P/let [res (run cmd {:quiet true})]
+        (if (= 0 (:code res))
+          ;; TODO: maybe mark as :exists and use without cleanup
+          (fatal 1 (str "Bridge " bridge " already exists"))
+          (if (re-seq #"(does not exist|no bridge named)" (:stderr res))
+            true
+            (fatal 1 (str "Unable to run '" cmd "': " (:stderr res)))))))))
 
 
 (defn bridge-create
   "Create a bridge named 'bridge'.
-  Bridge type is dependent on bridge-mode (:ovs or :linux)."
-  [bridge]
-  (P/let [{:keys [info error bridge-mode]} @ctx
-          _ (info "Creating bridge/switch" bridge)
+  Bridge type is dependent on mode (:ovs or :linux)."
+  [{:keys [bridge mode]}]
+  (P/let [{:keys [info error]} @ctx
           cmd (get {:ovs (str "ovs-vsctl add-br " bridge)
                     :linux (str "ip link add " bridge " up type bridge")}
-                   bridge-mode)
-          res (run cmd)]
-    (if (not= 0 (:code res))
-      (error (str "Unable to create bridge/switch " bridge))
-      (swap! ctx assoc-in [:network-state :bridges bridge :status] :created))
-    res))
+                   mode)]
+    (if (not cmd)
+      (info (str "Ignoring bridge/switch " bridge " for mode " mode))
+      (P/let [_ (info "Creating bridge/switch" bridge)
+              res (run cmd)]
+        (if (not= 0 (:code res))
+          (error (str "Unable to create bridge/switch " bridge))
+          (swap! ctx assoc-in [:network-state :bridges bridge :status] :created))
+        true))))
 
 (defn bridge-del
   "Delete the bridge named 'bridge'.
-  Bridge type is dependent on bridge-mode (:ovs or :linux)."
-  [bridge]
-  (P/let [{:keys [info error bridge-mode]} @ctx
-          _ (info "Deleting bridge/switch" bridge)
+  Bridge type is dependent on mode (:ovs or :linux)."
+  [{:keys [bridge mode]}]
+  (P/let [{:keys [info error]} @ctx
           cmd (get {:ovs (str "ovs-vsctl del-br " bridge)
-                    :linux (str "ip link del " bridge)} bridge-mode)
-          res (run cmd)]
-    (if (not= 0 (:code res))
-      (error (str "Unable to delete bridge " bridge))
-      (swap! ctx assoc-in [:network-state :bridges bridge :status] nil))
-    res))
+                    :linux (str "ip link del " bridge)} mode)]
+    (if (not cmd)
+      (info (str "Ignoring bridge/switch " bridge " for mode " mode))
+      (P/let [_ (info "Deleting bridge/switch" bridge)
+              res (run cmd)]
+        (if (not= 0 (:code res))
+          (error (str "Unable to delete bridge " bridge))
+          (swap! ctx assoc-in [:network-state :bridges bridge :status] nil))
+        true))))
 
 (defn bridge-add-link
   "Add the link/interface 'dev' to the bridge 'bridge'.
-  Bridge type is dependent on bridge-mode (:ovs or :linux)."
-  [bridge dev]
-  (P/let [{:keys [error bridge-mode]} @ctx
+  Bridge type is dependent on mode (:ovs or :linux)."
+  [{:keys [bridge mode]} dev]
+  (P/let [{:keys [error]} @ctx
           cmd (get {:ovs (str "ovs-vsctl add-port " bridge " " dev)
                     :linux (str "ip link set dev " dev " master " bridge)}
-                   bridge-mode)
+                   mode)
           res (run cmd)]
-    (when (not= 0 (:code res))
-      (error (str "Unable to add link " dev " into " bridge)))
-    res))
+    (if (= 0 (:code res))
+      (swap! ctx update-in [:network-state :bridges bridge :links] conj dev)
+      (error (str "Unable to add link " dev " into " bridge)))))
 
 (defn bridge-drop-link
   "Remove the link/interface 'dev' from the bridge 'bridge'.
-  Bridge type is dependent on bridge-mode (:ovs or :linux)."
-  [bridge dev]
-  (P/let [{:keys [error bridge-mode]} @ctx
+  Bridge type is dependent on mode (:ovs or :linux)."
+  [{:keys [bridge mode]} dev]
+  (P/let [{:keys [error]} @ctx
           cmd (get {:ovs (str "ovs-vsctl del-port " bridge " " dev)
                     :linux (str "ip link set dev " dev " nomaster")}
-                   bridge-mode)
+                   mode)
           res (run cmd)]
-    (when (not= 0 (:code res))
-      (error (str "Unable to drop link " dev " from " bridge)))
-    res))
+    (if (= 0 (:code res))
+      (swap! ctx update-in [:network-state :bridges bridge :links] disj dev)
+      (error (str "Unable to drop link " dev " from " bridge)))))
 
+
+
+;;; Link commands
 
 (defn link-add
   "Create a link/interface defined by 'link' in a container by calling
@@ -635,7 +682,7 @@ General Options:
       (when (seq bridges)
         (P/do
           (log (str "Removing bridges: " (S/join ", " (keys bridges))))
-          (P/all (map bridge-del (keys bridges)))))
+          (P/all (map bridge-del (vals bridges)))))
       (js/process.exit 127))))
 
 
@@ -650,40 +697,6 @@ General Options:
   (when (empty? config-schema)
     (fatal 2 "Could not find config-schema" orig-config-schema)))
 
-(defn startup-checks
-  "Check startup state and return map of :bridge-mode, :docker, and
-  :podman. If bridge-mode is :auto then return :ovs if the
-  'openvswitch' kernel module is loaded otherwise fall back to :linux.
-  Exit with an error if bridge-mode is :ovs and the 'openvswitch'
-  kernel module is not loaded or if neither a docker or podman
-  connection could be established."
-  [{:keys [bridge-mode docker-socket podman-socket]}]
-  (P/let
-    [{:keys [info warn]} @ctx
-     ovs? (kmod-loaded? "openvswitch")
-     bridge-mode (condp = [bridge-mode ovs?]
-                   [:auto true]
-                   :ovs
-
-                   [:auto false]
-                   (do
-                     (warn (str "bridge-mode is 'auto' but no 'openvswitch' "
-                                "kernel module loaded, so using 'linux'"))
-                    :linux)
-
-                   [:ovs false]
-                   (fatal 1 (str "bridge-mode is 'ovs', but no 'openvswitch' "
-                                 "kernel module loaded"))
-
-                   bridge-mode)
-     docker (docker-client docker-socket)
-     podman (docker-client podman-socket)]
-    (when (and (not docker) (not podman))
-      (fatal 1 "Failed to start either docker or podman client/listener"))
-    {:bridge-mode bridge-mode
-     :docker docker
-     :podman podman}))
-
 (defn server
   "Process:
     - parse/validate command line options
@@ -692,7 +705,7 @@ General Options:
     - determine our own container ID and compose properties (if any)
     - generate runtime network state and other process context/state
     - install exit/cleanup handlers
-    - start/init openvswitch daemons/config (if :ovs bridge-mode)
+    - start/init openvswitch daemons/config (if any bridges use :ovs mode)
     - check that any defined bridges do not already exist
     - create any bridges defined in network config links
     - start listening/handling docker/podman container events
@@ -704,7 +717,7 @@ General Options:
      {:keys [log info]} (swap! ctx merge (when verbose {:info Eprintln}))
      opts (merge
             opts
-            {:bridge-mode (keyword (:bridge-mode opts))
+            {:default-bridge-mode (keyword (:default-bridge-mode opts))
              :orig-config-schema (:config-schema opts)
              :config-schema (resolve-path (:config-schema opts) SCHEMA-PATHS)
              :network-file (mapcat #(S/split % #":") (:network-file opts))
@@ -716,6 +729,9 @@ General Options:
      env (js->clj (js/Object.assign #js {} js/process.env))
      self-pid js/process.pid
      schema (load-config (:config-schema opts))
+     kmod-ovs? (kmod-loaded? "openvswitch")
+     _ (swap! ctx merge {:default-bridge-mode (:default-bridge-mode opts)
+                         :kmod-ovs? kmod-ovs?})
      network-config (P/-> (load-configs compose-file network-file)
                           (interpolate-walk env)
                           (check-schema schema verbose)
@@ -724,7 +740,11 @@ General Options:
          (println (js/JSON.stringify (->js network-config)))
          (js/process.exit 0))
 
-     {:keys [bridge-mode docker podman]} (startup-checks opts)
+     docker (docker-client (:docker-socket opts))
+     podman (docker-client (:podman-socket opts))
+     _ (when (and (not docker) (not podman))
+         (fatal 1 "Failed to start either docker or podman client/listener"))
+
      self-cid (get-container-id)
      self-container-obj (when self-cid
                           (get-container (or docker podman) self-cid))
@@ -733,8 +753,7 @@ General Options:
                     {:project compose-project}
                     (get-compose-labels self-container))
      network-state (gen-network-state network-config)
-     ctx-data {:bridge-mode bridge-mode
-               :network-config network-config
+     ctx-data {:network-config network-config
                :network-state network-state
                :compose-opts compose-opts
                :docker docker
@@ -749,7 +768,6 @@ General Options:
     (js/process.on "SIGTERM" #(exit-handler % "signal"))
     (js/process.on "uncaughtException" #(exit-handler %1 %2))
 
-    (log "Bridge mode:" (name bridge-mode))
     (log (str "Using schema at '" (:config-schema opts) "'"))
     (info (str "Starting network config\n"
                (indent-pprint-str network-config "  ")))
@@ -764,15 +782,16 @@ General Options:
       (when self-cid
         (rename-docker-eth0))
 
-      (when (= :ovs bridge-mode)
+      (when (some #(= :ovs (:mode %)) (-> network-config :bridges vals))
         (start-ovs))
 
       ;; Check that bridges/switches do not already exist
-      (P/all (for [bridge (-> network-state :bridges keys)]
+      (P/all (for [bridge (vals (:bridges network-state))]
                (check-no-bridge bridge)))
+
       ;; Create bridges/switch configs
       ;; TODO: should be done on-demand
-      (P/all (for [bridge (-> network-state :bridges keys)]
+      (P/all (for [bridge (vals (:bridges network-state))]
                (bridge-create bridge)))
 
       ;; Create tunnels configs
