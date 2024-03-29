@@ -46,6 +46,13 @@ properties:
         mode:      {type: string}
         vlanid:    {type: number}
 
+  bridges:
+    type: array
+    items:
+      type: object
+      properties:
+        mode: {type: string, enum: [auto, ovs, linux]}
+
   tunnels:
     type: array
     items:

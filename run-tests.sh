@@ -134,6 +134,26 @@ echo " >> Check for round-trip ping delay of 80ms"
 dc_test node_1 'ping -c2 10.0.1.2 | tail -n1 | grep "max = 80\."'
 
 
+echo -e "\n\n>>> test9: bridge modes and variable templating"
+echo "COMPOSE_FILE=examples/test9-compose.yaml" > .env
+
+echo -e "\n\n >> test9: bridge mode: auto"
+GROUP=test9-auto
+export BRIDGE_MODE=auto
+dc_init; dc_wait 10 node_1 'ip addr | grep "10\.0\.1\.1"' \
+    || die "test9 (auto) startup failed"
+echo " >> Check for round-trip ping connectivity (BRIDGE_MODE=auto)"
+dc_test node_1 'ping -c2 10.0.1.2'
+
+echo -e "\n\n >> test9: bridge mode: linux"
+GROUP=test9-linux
+export BRIDGE_MODE=linux
+dc_init; dc_wait 10 node_1 'ip addr | grep "10\.0\.1\.1"' \
+    || die "test9 (linux) startup failed"
+echo " >> Check for round-trip ping connectivity (BRIDGE_MODE=linux)"
+dc_test node_1 'ping -c2 10.0.1.2'
+
+
 echo -e "\n\n>>> Cleaning up"
 dc down -t1 --remove-orphans
 rm -f .env

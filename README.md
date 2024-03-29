@@ -47,14 +47,15 @@ container uses systemd, then it will likely use `SYS_NICE` and
 ### Bridging: Open vSwtich/OVS or Linux bridge
 
 Conlink creates bridges/switches and connects veth container links to
-those bridges (specified by `bridge:` in the link specification).
-By default, conlink will attempt to create Open vSwitch/OVS bridges
-for these connections, however, if the kernel does not provide support
-(`openvswitch` kernel module loaded), then conlink will fallback to
-using standard Linux bridges. The fallback behavior can be changed by
-setting the `--bridge-mode` option to either "ovs" or "linux". If the
-bridge mode is set to "ovs" then conlink will fail to start if the
-`openvswitch` kernel module is not detected.
+a bridge (specified by `bridge:` in the link specification). The
+default bridge mode is defined by the `--default-bridge-mode`
+parameter and defaults to "auto". If a bridge is set to mode "auto"
+then conlink will check if the kernel has the `openvswitch` kernel
+module loaded and if so it will create an Open vSwitch/OVS
+bridge/switch for that bridge, otherwise it will create a regular
+Linux bridge (e.g. brctl). If any bridges are explicitly defined with
+an "ovs" mode and the kernel does not have support then conlink will
+stop/error on startup.
 
 ## Network Configuration Syntax
 
@@ -121,6 +122,21 @@ than the MTU of the parent (outer-dev) device.
 
 For the `netem` property, refer to the `netem` man page. The `OPTIONS`
 grammar defines the valid strings for the `netem` property.
+
+### Bridges
+
+The bridge settings currently only support the "mode" setting. If
+the mode is not specified in this section or the section is omitted
+entirely, then bridges specified in the links configuration will
+default to the value of the `--default-bridge-mode` parameter (which
+itself defaults to "auto").
+
+The following table describes the bridge properties:
+
+| property  | format  | description                    |
+|-----------|---------|--------------------------------|
+| bridge    | string  | conlink bridge / domain name   |
+| mode      | string  | auto, ovs, or linux            |
 
 ### Tunnels
 
@@ -475,6 +491,19 @@ curl 192.168.0.32
 Note: to connect to the vlan node (NODE2_HOST_ADDRESS) you will need
 to configure your physical switch/router with routing/connectivity to
 VLAN 5 on the same physical link to your host.
+
+### test9: bridge modes
+
+This example demonstrates the supported bridge modes.
+
+Start the test9 compose configuration using different bridge modes and
+validate connectivity using ping:
+
+```
+export BRIDGE_MODE="linux"  # "ovs", "auto"
+docker-compose -f examples/test9-compose.yaml up --build --force-recreate
+docker-compose -f examples/test9-compose.yaml exec node ping 10.0.1.2
+```
 
 ## GraphViz network configuration rendering
 
