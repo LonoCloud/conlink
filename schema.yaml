@@ -51,7 +51,7 @@ properties:
     items:
       type: object
       properties:
-        mode: {type: string, enum: [auto, ovs, linux]}
+        mode: {type: string, enum: [auto, ovs, linux, patch]}
 
   tunnels:
     type: array

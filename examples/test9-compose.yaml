@@ -30,4 +30,3 @@ x-network:
     - {bridge: s1, service: node, ip: 10.0.1.1/24}
   bridges:
     - {bridge: s1, mode: "${BRIDGE_MODE:-auto}"}
-

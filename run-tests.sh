@@ -153,6 +153,16 @@ dc_init; dc_wait 10 node_1 'ip addr | grep "10\.0\.1\.1"' \
 echo " >> Check for round-trip ping connectivity (BRIDGE_MODE=linux)"
 dc_test node_1 'ping -c2 10.0.1.2'
 
+echo -e "\n\n >> test9: bridge mode: patch"
+GROUP=test9-patch
+export BRIDGE_MODE=patch
+dc_init; dc_wait 10 node_1 'ip addr | grep "10\.0\.1\.1"' \
+    || die "test9 startup failed"
+echo " >> Ensure ingest filter rules exist (BRIDGE_MODE=patch)"
+dc_test network 'tc filter show dev node_1-eth0 parent ffff: | grep "action order 1: mirred"'
+echo " >> Check for round-trip ping connectivity (BRIDGE_MODE=patch)"
+dc_test node_1 'ping -c2 10.0.1.2'
+
 
 echo -e "\n\n>>> Cleaning up"
 dc down -t1 --remove-orphans
