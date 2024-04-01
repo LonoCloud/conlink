@@ -13,6 +13,8 @@ General:
 Other:
 * For Open vSwtich (OVS) bridging, the `openvswitch` kernel module
   must loaded on the host system (where docker engine is running).
+* For patch connections (`bridge: patch`), the kernel must support
+  tc qdisc mirred filtering via the `act_mirred` kernel module.
 * For podman usage (e.g. second part of `test3`), podman is required.
 * For remote connections/links (e.g. `test5`), the `geneve` (and/or
   `vxlan`) kernel module must be loaded on the host system (where
@@ -44,18 +46,28 @@ will also be required for the conlink container. In particular, if the
 container uses systemd, then it will likely use `SYS_NICE` and
 `NET_BROADCAST` and conlink will likewise need those capabilities.
 
-### Bridging: Open vSwtich/OVS or Linux bridge
+### Bridging: Open vSwtich/OVS, Linux bridge, and patch
 
-Conlink creates bridges/switches and connects veth container links to
-a bridge (specified by `bridge:` in the link specification). The
-default bridge mode is defined by the `--default-bridge-mode`
-parameter and defaults to "auto". If a bridge is set to mode "auto"
-then conlink will check if the kernel has the `openvswitch` kernel
-module loaded and if so it will create an Open vSwitch/OVS
-bridge/switch for that bridge, otherwise it will create a regular
-Linux bridge (e.g. brctl). If any bridges are explicitly defined with
-an "ovs" mode and the kernel does not have support then conlink will
-stop/error on startup.
+Conlink connects container veth links together via a bridge or via a
+direct patch. All veth type links must have a `bridge` property that
+defines which links will be connected together (i.e. the same
+broadcast domain). The default bridge mode is defined by the
+`--default-bridge-mode` parameter and defaults to "auto". If a bridge
+is set to mode "auto" then conlink will check if the kernel has the
+`openvswitch` kernel module loaded and if so it will create an Open
+vSwitch/OVS bridge/switch for that bridge, otherwise it will create a
+regular Linux bridge (e.g. brctl). If any bridges are explicitly
+defined with an "ovs" mode and the kernel does not have support then
+conlink will stop/error on startup.
+
+The "patch" mode will connect two links together using tc qdisc
+ingress filters. This type connection is equivalent to a patch panel
+("bump-in-the-wire") connection and all traffic will be passed between
+the two links unchanged unlike Linux and OVS bridges which typically
+block certain bridge control broadcast traffic). The primary downside
+of "patch" connections is that they limited to two links whereas "ovs"
+and "linux" bridge modes can support many links connected into the
+same bridge (broadcast domain).
 
 ## Network Configuration Syntax
 
@@ -500,7 +512,7 @@ Start the test9 compose configuration using different bridge modes and
 validate connectivity using ping:
 
 ```
-export BRIDGE_MODE="linux"  # "ovs", "auto"
+export BRIDGE_MODE="linux"  # "ovs", "patch", "auto"
 docker-compose -f examples/test9-compose.yaml up --build --force-recreate
 docker-compose -f examples/test9-compose.yaml exec node ping 10.0.1.2
 ```
