@@ -26,6 +26,7 @@ services:
   Nauto:   { <<: *node }
   Nlinux:  { <<: *node }
   Novs:    { <<: *node }
+  Npatch:  { <<: *node }
 
 x-network:
   links:
@@ -33,8 +34,10 @@ x-network:
     - {bridge: s2, service: Nauto,    ip: 10.0.2.1/24}
     - {bridge: s3, service: Nlinux,   ip: 10.0.3.1/24}
     - {bridge: s4, service: Novs,     ip: 10.0.4.1/24}
+    - {bridge: s5, service: Npatch,   ip: 10.0.5.1/24}
   bridges:
     - {bridge: s2, mode: auto}
     - {bridge: s3, mode: linux}
     - {bridge: s4, mode: ovs}
+    - {bridge: s5, mode: patch}
 

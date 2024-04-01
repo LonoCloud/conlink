@@ -27,7 +27,7 @@ General Options:
   -v, --verbose                     Show verbose output (stderr)
                                     [env: VERBOSE]
   --show-config                     Print loaded network config JSON and exit
-  --default-bridge-mode BRIDGE-MODE Default bridge mode (ovs, linux, or auto)
+  --default-bridge-mode BRIDGE-MODE Default bridge mode (ovs, linux, patch, or auto)
                                     to use for bridge/switch connections
                                     [default: auto] [env: CONLINK_BRIDGE_MODE]
   --network-file NETWORK-FILE...    Network config file
@@ -62,7 +62,8 @@ General Options:
                 :warn         #(apply Eprintln "WARNING:" %&)
                 :log          Eprintln
                 :info         #(identity nil)
-                :kmod-ovs?    false}))
+                :kmod-ovs?    false
+                :kmod-mirred? false}))
 
 ;; Simple utility functions
 (defn json-str [obj]
@@ -121,10 +122,14 @@ General Options:
 (defn enrich-bridge
   "If bridge mode is :auto then return :ovs if the 'openvswitch' kernel module
   is loaded otherwise fall back to :linux. Exit with an error if mode is :ovs
-  and the 'openvswitch' kernel module is not loaded."
+  or :patch and the 'openvswitch' or 'act_mirred' kernel modules are not
+  loaded respectively."
   [{:as bridge-opts :keys [bridge mode]}]
-  (let [{:keys [warn default-bridge-mode kmod-ovs?]} @ctx
+  (let [{:keys [warn default-bridge-mode kmod-ovs? kmod-mirred?]} @ctx
         mode (keyword (or mode default-bridge-mode))
+        _ (when (and (= :patch mode) (not kmod-mirred?))
+            (fatal 1 (str "bridge " bridge " mode is 'patch', "
+                          "but no 'act_mirred' kernel module loaded")))
         _ (when (and (= :ovs mode) (not kmod-ovs?))
             (fatal 1 (str "bridge " bridge " mode is 'ovs', "
                           "but no 'openvswitch' kernel module loaded")))
@@ -345,7 +350,8 @@ General Options:
   [{:keys [bridge mode]}]
   (P/let [{:keys [info]} @ctx
           cmd (get {:ovs (str "ovs-vsctl list-ifaces " bridge)
-                    :linux (str "ip link show type bridge " bridge)}
+                    :linux (str "ip link show type bridge " bridge)
+                    :patch nil}
                    mode)]
     (if (not cmd)
       true
@@ -364,7 +370,8 @@ General Options:
   [{:keys [bridge mode]}]
   (P/let [{:keys [info error]} @ctx
           cmd (get {:ovs (str "ovs-vsctl add-br " bridge)
-                    :linux (str "ip link add " bridge " up type bridge")}
+                    :linux (str "ip link add " bridge " up type bridge")
+                    :patch nil}
                    mode)]
     (if (not cmd)
       (info (str "Ignoring bridge/switch " bridge " for mode " mode))
@@ -381,7 +388,8 @@ General Options:
   [{:keys [bridge mode]}]
   (P/let [{:keys [info error]} @ctx
           cmd (get {:ovs (str "ovs-vsctl del-br " bridge)
-                    :linux (str "ip link del " bridge)} mode)]
+                    :linux (str "ip link del " bridge)
+                    :patch nil} mode)]
     (if (not cmd)
       (info (str "Ignoring bridge/switch " bridge " for mode " mode))
       (P/let [_ (info "Deleting bridge/switch" bridge)
@@ -417,7 +425,41 @@ General Options:
       (swap! ctx update-in [:network-state :bridges bridge :links] disj dev)
       (error (str "Unable to drop link " dev " from " bridge)))))
 
+(defn patch-add-link
+  "Setup patch between 'dev' and its peer link using tc qdisc mirred
+  filter action. Peer links are tracked in pseudo-bridge 'bridge'."
+  [{:keys [bridge mode]} dev]
+  (let [{:keys [info error]} @ctx
+        links-path [:network-state :bridges bridge :links]
+        links (get-in @ctx links-path)
+        peers (disj links dev)]
+    (condp = (count peers)
+      0
+      (P/do
+        (info (str "Registering first peer link "
+                   dev " in :patch 'bridge' " bridge))
+        (swap! ctx update-in links-path conj dev))
 
+      1
+      (P/let [cmd (str "link-mirred.sh " dev " " (first peers))
+              res (run cmd)]
+        (if (= 0 (:code res))
+          (swap! ctx update-in links-path conj dev)
+          (error (str "Failed to setup tc filter action for "
+                      dev " in :patch 'bridge' " bridge))))
+
+      (error "Cannot add third peer link "
+             dev " to :patch 'bridge' " bridge))))
+
+(defn patch-drop-link
+  "Remove tracking of 'dev' from pseudo-bridge 'bridge'."
+  [{:keys [bridge mode]} dev]
+  (let [{:keys [info error]} @ctx
+        links-path [:network-state :bridges bridge :links]]
+    (info (str "Removing peer link "
+               dev " from :patch 'bridge' " bridge))
+    ;; State is in the links, no extra cleanup
+    (swap! ctx update-in links-path conj dev)))
 
 ;;; Link commands
 
@@ -566,7 +608,10 @@ General Options:
         (P/do
           (swap! ctx assoc-in status-path :creating)
           (link-add link)
-          (when bridge (bridge-add-link bridge outer-dev))
+          (when bridge
+            (if (= :patch (:mode bridge))
+              (patch-add-link bridge outer-dev)
+              (bridge-add-link bridge outer-dev)))
           (swap! ctx assoc-in status-path :created)))
 
       "die"
@@ -574,7 +619,10 @@ General Options:
         (error (str "Link " dev-id " does not exist"))
         (P/do
           (swap! ctx assoc-in status-path :deleting)
-          (when bridge (bridge-drop-link bridge outer-dev))
+          (when bridge
+            (if (= :patch (:mode bridge))
+              (patch-drop-link bridge outer-dev)
+              (bridge-drop-link bridge outer-dev)))
           (link-del link)
           (swap! ctx assoc-in status-path nil))))))
 
@@ -730,8 +778,10 @@ General Options:
      self-pid js/process.pid
      schema (load-config (:config-schema opts))
      kmod-ovs? (kmod-loaded? "openvswitch")
+     kmod-mirred? (kmod-loaded? "act_mirred")
      _ (swap! ctx merge {:default-bridge-mode (:default-bridge-mode opts)
-                         :kmod-ovs? kmod-ovs?})
+                         :kmod-ovs? kmod-ovs?
+                         :kmod-mirred? kmod-mirred?})
      network-config (P/-> (load-configs compose-file network-file)
                           (interpolate-walk env)
                           (check-schema schema verbose)
