@@ -9,8 +9,15 @@ declare FAIL=0
 
 die() { echo >&2 "${*}"; exit 1; }
 vecho() { [ "${VERBOSE}" ] && echo "${*}" || true; }
-dc() { docker-compose "${@}"; }
+dc() { ${DOCKER_COMPOSE} "${@}"; }
 mdc() { ./mdc "${@}" || die "mdc invocation failed"; }
+
+# Determine compose command
+for dc in "docker compose" "docker-compose"; do
+  ${dc} version 2>/dev/null >&2 && DOCKER_COMPOSE="${dc}" && break
+done
+[ "${DOCKER_COMPOSE}" ] || die "No compose command found"
+echo >&2 "Using compose command '${DOCKER_COMPOSE}'"
 
 dc_init() {
   local cont="${1}" idx="${2}"
