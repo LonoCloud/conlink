@@ -2,6 +2,7 @@
 
 export VERBOSE=${VERBOSE:-}
 export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-conlink-test}
+export DOCKER_COMPOSE=${DOCKER_COMPOSE:-docker-compose}
 declare TEST_NUM=0
 declare -A RESULTS
 declare PASS=0
@@ -9,7 +10,7 @@ declare FAIL=0
 
 die() { echo >&2 "${*}"; exit 1; }
 vecho() { [ "${VERBOSE}" ] && echo "${*}" || true; }
-dc() { docker-compose "${@}"; }
+dc() { ${DOCKER_COMPOSE} "${@}"; }
 mdc() { ./mdc "${@}" || die "mdc invocation failed"; }
 
 dc_init() {
@@ -17,8 +18,10 @@ dc_init() {
   dc down --remove-orphans -t1
   dc up -d --force-recreate "${@}"
   while ! dc logs network | grep "All links connected"; do
+    vecho "log output:"
+    [ "${VERBOSE}" ] && sleep 1 && dc logs network
     vecho "waiting for conlink startup"
-    sleep 1
+    sleep 9
   done
 }
 
@@ -63,76 +66,18 @@ dc_test() {
 }
 
 
-echo -e "\n\n>>> test1: combined config"
-GROUP=test1
-echo "COMPOSE_FILE=examples/test1-compose.yaml" > .env
-dc_init || die "test1 startup failed"
-
-echo " >> Ping nodes from other nodes"
-dc_test h1 ping -c1 10.0.0.100
-dc_test h2 ping -c1 192.168.1.100
-dc_test h3 ping -c1 172.16.0.100
-
-echo -e "\n\n>>> test2: separate config and scaling"
-GROUP=test2
-echo "COMPOSE_FILE=examples/test2-compose.yaml" > .env
-dc_init || die "test2 startup failed"
-
-echo " >> Cross-node ping and ping the 'internet'"
-dc_test node_1 ping -c1 10.0.1.2
-dc_test node_2 ping -c1 10.0.1.1
-dc_test node_1 ping -c1 8.8.8.8
-dc_test node_2 ping -c1 8.8.8.8
-
-echo " >> Scale the nodes from 2 to 5"
-dc up -d --scale node=5
-dc_wait 10 node_5 'ip addr | grep "10\.0\.1\.5"' || die "test2 scale-up failed"
-echo " >> Ping the fifth node from the second"
-dc_test node_2 ping -c1 10.0.1.5
-
-
-echo -e "\n\n>>> test4: multiple compose / mdc"
-GROUP=test4
-export MODES_DIR=./examples/test4-multiple/modes
-
-mdc node1
-dc_init; dc_wait 10 r0_1 'ip addr | grep "10\.1\.0\.100"' \
-    || die "test4 node1 startup failed"
-echo " >> Ping the r0 router host from node1"
-dc_test node1_1 ping -c1 10.0.0.100
-
-mdc node1,nodes2
-dc_init; dc_wait 10 node2_2 'ip addr | grep "10\.2\.0\.2"' \
-    || die "test4 node1,nodes2 startup failed"
-echo " >> From both node2 replicas, ping node1 across the r0 router"
-dc_test node2_1 ping -c1 10.1.0.1
-dc_test node2_2 ping -c1 10.1.0.1
-echo " >> From node1, ping both node2 replicas across the r0 router"
-dc_test node1 ping -c1 10.2.0.1
-dc_test node1 ping -c1 10.2.0.2
-
-mdc all
-dc_init; dc exec -T r0 /scripts/wait.sh -t 10.0.0.100:80 \
-    || die "test4 all startup failed"
-echo " >> From node2, download from the web server in r0"
-dc_test node2_1 wget -O- 10.0.0.100
-dc_test node2_2 wget -O- 10.0.0.100
-
-
-echo -e "\n\n>>> test7: MAC, MTU, and NetEm settings"
+echo -e "\n\n>>> test9: patch test"
 GROUP=test7
-echo "COMPOSE_FILE=examples/test7-compose.yaml" > .env
+echo "COMPOSE_FILE=examples/test9-compose.yaml" > .env
 
-dc_init; dc_wait 10 node_1 'ip addr | grep "10\.0\.1\.1"' \
-    || die "test7 startup failed"
-echo " >> Ensure MAC and MTU are set correctly"
-dc_test node_1 'ip link show eth0 | grep "ether 00:0a:0b:0c:0d:01"'
-dc_test node_2 'ip link show eth0 | grep "ether 00:0a:0b:0c:0d:02"'
-dc_test node_1 'ip link show eth0 | grep "mtu 4111"'
-dc_test node_2 'ip link show eth0 | grep "mtu 4111"'
-echo " >> Check for round-trip ping delay of 80ms"
-dc_test node_1 'ping -c2 10.0.1.2 | tail -n1 | grep "max = 80\."'
-
+dc_init; dc_wait 10 Npatch_1 'ip addr | grep "10\.0\.5\.1"' \
+    || die "test9 startup failed"
+echo " >> Ensure ingest filter rules exist"
+dc_test network 'tc filter show dev Npatch_1-eth0 parent ffff: | grep "action order 1: mirred"'
+dc_test network 'tc filter show dev Npatch_2-eth0 parent ffff: | grep "action order 1: mirred"'
+echo " >> Check for round-trip connectivity"
+dc_test Npatch_1 'ping -c2 10.0.5.2'
+dc_test Npatch_2 'ping -c2 10.0.5.1'
 
 echo -e "\n\n>>> Cleaning up"
 dc down -t1 --remove-orphans

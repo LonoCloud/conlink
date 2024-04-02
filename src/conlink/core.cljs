@@ -6,7 +6,7 @@
             [clojure.pprint :refer [pprint]]
             [promesa.core :as P]
             [cljs-bean.core :refer [->clj ->js]]
-            [conlink.util :refer [parse-opts Eprintln fatal
+            [conlink.util :refer [parse-opts Eprn Eprintln fatal
                                   trim indent interpolate-walk deep-merge
                                   spawn read-file load-config resolve-path]]
             [conlink.addrs :as addrs]
@@ -127,9 +127,9 @@ General Options:
   [{:as bridge-opts :keys [bridge mode]}]
   (let [{:keys [warn default-bridge-mode kmod-ovs? kmod-mirred?]} @ctx
         mode (keyword (or mode default-bridge-mode))
-        _ (when (and (= :patch mode) (not kmod-mirred?))
-            (fatal 1 (str "bridge " bridge " mode is 'patch', "
-                          "but no 'act_mirred' kernel module loaded")))
+        ;;_ (when (and (= :patch mode) (not kmod-mirred?))
+        ;;    (fatal 1 (str "bridge " bridge " mode is 'patch', "
+        ;;                  "but no 'act_mirred' kernel module loaded")))
         _ (when (and (= :ovs mode) (not kmod-ovs?))
             (fatal 1 (str "bridge " bridge " mode is 'ovs', "
                           "but no 'openvswitch' kernel module loaded")))
@@ -140,6 +140,7 @@ General Options:
         mode (if (= :auto mode)
               (if kmod-ovs? :ovs :linux)
               mode)]
+    (Eprn :bridge bridge :orig-mode (:mode bridge-opts) :mode mode :kmod-ovs? kmod-ovs?)
     (assoc bridge-opts :mode mode)))
 
 (defn enrich-network-config

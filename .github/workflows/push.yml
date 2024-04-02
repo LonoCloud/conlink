@@ -20,5 +20,9 @@ jobs:
         run: docker-compose -f examples/test1-compose.yaml build
 
       - name: "./run-tests.sh"
-        timeout-minutes: 5
-        run: time ./run-tests.sh
+        timeout-minutes: 1
+        run: time VERBOSE=1 ./run-tests.sh
+
+      - name: show logs
+        if: always()
+        run: docker-compose -f examples/test9-compose.yaml logs
