@@ -17,7 +17,7 @@ jobs:
         run: npm install
 
       - name: compose build of conlink
-        run: docker-compose -f examples/test1-compose.yaml build
+        run: docker compose -f examples/test1-compose.yaml build
 
       - name: "./run-tests.sh"
         timeout-minutes: 5
