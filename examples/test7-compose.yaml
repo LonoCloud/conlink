@@ -15,7 +15,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker:/var/lib/docker
       - ./:/test
-    command: /app/build/conlink.js --compose-file /test/test7-compose.yaml
+    command: /app/build/conlink.js --default-mtu 5111 --compose-file /test/test7-compose.yaml
 
   node:
     image: alpine
@@ -29,3 +29,6 @@ services:
           mac: 00:0a:0b:0c:0d:01
           mtu: 4111
           netem: "delay 40ms rate 10mbit"
+        - bridge: s2
+          ip: 100.0.1.1/16
+          dev: eth1

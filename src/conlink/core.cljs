@@ -30,6 +30,8 @@ General Options:
   --default-bridge-mode BRIDGE-MODE Default bridge mode (ovs, linux, patch, or auto)
                                     to use for bridge/switch connections
                                     [default: auto] [env: CONLINK_BRIDGE_MODE]
+  --default-mtu MTU                 Default link MTU (for non *vlan types)
+                                    [default: 65535]
   --network-file NETWORK-FILE...    Network config file
   --compose-file COMPOSE-FILE...    Docker compose file with network config
   --compose-project NAME            Docker compose project name for resolving
@@ -100,10 +102,11 @@ General Options:
   Add default values to a link:
     - type: veth
     - dev: eth0
-    - mtu: 9000 (for non *vlan type)
+    - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
   [{:as link :keys [type base bridge ip vlanid]} bridges]
-  (let [type (keyword (or type "veth"))
+  (let [{:keys [default-mtu]} @ctx
+        type (keyword (or type "veth"))
         base-default (cond (= :veth type)     :conlink
                            (VLAN-TYPES type)  :host
                            :else              :local)
@@ -116,7 +119,7 @@ General Options:
                (when bridge
                  {:bridge (get bridges bridge)})
                (when (not (VLAN-TYPES type))
-                 {:mtu  (get link :mtu 9000)}))]
+                 {:mtu  (get link :mtu default-mtu)}))]
     link))
 
 (defn enrich-bridge
@@ -781,6 +784,7 @@ General Options:
      kmod-ovs? (kmod-loaded? "openvswitch")
      kmod-mirred? (kmod-loaded? "act_mirred")
      _ (swap! ctx merge {:default-bridge-mode (:default-bridge-mode opts)
+                         :default-mtu (:default-mtu opts)
                          :kmod-ovs? kmod-ovs?
                          :kmod-mirred? kmod-mirred?})
      network-config (P/-> (load-configs compose-file network-file)
