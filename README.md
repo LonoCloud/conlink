@@ -102,7 +102,7 @@ The following table describes the link properties:
 | dev       | *          | string[15] | eth0    | container intf name      |
 | ip        | *          | CIDR       |         | IP CIDR (index offset)   |
 | mac       | 3          | MAC        |         | MAC addr (index offset)  |
-| mtu       | *          | number 4   | 9000    | intf MTU                 |
+| mtu       | *          | number 4   | 65535   | intf MTU                 |
 | route     | *          | string     |         | ip route add args        |
 | nat       | *          | IP         |         | DNAT/SNAT to IP          |
 | netem     | *          | string     |         | tc qdisc NetEm options   |
@@ -449,8 +449,10 @@ Start the test7 compose configuration:
 docker-compose -f examples/test7-compose.yaml up --build --force-recreate
 ```
 
-Show the links in both node containers to see that the MAC addresses
-are `00:0a:0b:0c:0d:0*` and the MTUs are set to `4111`.
+Show the links in both node containers to see that on the eth0
+interfaces the MAC addresses are `00:0a:0b:0c:0d:0*` and the MTUs are
+set to `4111`. The eth1 interfaces should have the command line set
+default MTU of `5111`.
 
 ```
 docker-compose -f examples/test7-compose.yaml exec --index 1 node ip link
