@@ -45,6 +45,9 @@ properties:
         netem:     {type: string}
         mode:      {type: string}
         vlanid:    {type: number}
+        forward:
+          type: array
+          items: {type: string, pattern: "^[0-9]{1,5}:[0-9]{1,5}/(tcp|udp)$"}
 
   bridges:
     type: array

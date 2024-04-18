@@ -1,0 +1,38 @@
+version: "2.4"
+
+services:
+  node1:
+    image: python:3-alpine
+    network_mode: none
+    command: "python3 -m http.server -d /var 80"
+    x-network:
+      links:
+        - {bridge: s2, ip: "10.0.1.1/24", route: "default",
+           forward: ["1080:80/tcp", "1180:80/tcp"]}
+
+  node2:
+    image: python:3-alpine
+    network_mode: none
+    scale: 2
+    command: "python3 -m http.server -d /usr 80"
+    x-network:
+      links:
+        - {bridge: s1, ip: "10.0.2.1/24", route: "default",
+           forward: ["80:80/tcp"]}
+
+  network:
+    build: {context: ../}
+    image: conlink
+    pid: host
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, NET_BROADCAST, IPC_LOCK]
+    security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker
+      - ../:/test
+    ports:
+      - "3080:1080/tcp"
+      - "8080:1180/tcp"
+      - "80:80/tcp"
+      - "81:81/tcp"
+    command: /app/build/conlink.js --compose-file /test/examples/test10-compose.yaml
