@@ -106,23 +106,40 @@ General Options:
     - dev: eth0
     - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
-  [{:as link :keys [type base bridge ip]} bridges]
-  (let [{:keys [default-mtu]} @ctx
+  [{:as link :keys [type base bridge ip forward]} bridges]
+  (let [{:keys [default-mtu docker-eth0?]} @ctx
         type (keyword (or type "veth"))
         dev (get link :dev "eth0")
         base-default (cond (= :veth type)     :conlink
                            (VLAN-TYPES type)  :host
                            :else              :local)
         base (get link :base base-default)
+        bridge (get bridges bridge)
         link (merge
                link
                {:type type
                 :dev  dev
                 :base base}
                (when bridge
-                 {:bridge (get bridges bridge)})
+                 {:bridge bridge})
                (when (not (VLAN-TYPES type))
-                 {:mtu  (get link :mtu default-mtu)}))]
+                 {:mtu  (get link :mtu default-mtu)})
+               (when forward
+                 {:forward
+                  (map #(let [[port_a port_b proto] (S/split % #"[:/]")]
+                          [(js/parseInt port_a) (js/parseInt port_b) proto])
+                       forward)}))]
+    (when forward
+      (let [link-id (str (or (:service link) (:container link)) ":" dev)
+            pre (str "link '" link-id "' has forward setting")]
+        (when (not= :veth type)
+          (fatal 1 (str pre " but is not of type :veth")))
+        (when (not (#{:ovs :linux} (:mode bridge)))
+          (fatal 1 (str pre " but bridge mode is not 'ovs' or 'linux'")))
+        (when (not ip)
+          (fatal 1 (str pre " but does not have IP")))
+        (when (not docker-eth0?)
+          (fatal 1 (str pre " but no docker eth0 is present")))))
     link))
 
 (defn enrich-bridge
@@ -230,7 +247,7 @@ General Options:
   "Add offset value to ip and mac keys in a link definition to account
   for multiple instances of that link i.e. a compose service with
   multiple replicas (scale >= 2)."
-  [{:as link :keys [ip mac]} offset]
+  [{:as link :keys [ip mac forward]} offset]
   ;; TODO: add vlanid
   (let [mac (when mac
               (addrs/int->mac
@@ -239,8 +256,15 @@ General Options:
              (let [[ip prefix] (S/split ip #"/")]
                (str (addrs/int->ip
                       (+ offset (addrs/ip->int ip)))
-                    "/" prefix)))]
-    (merge link (when mac {:mac mac}) (when ip {:ip ip}))))
+                    "/" prefix)))
+        forward (when forward
+                  (map #(let [[port_a port_b proto] %]
+                          [(+ offset port_a) port_b proto])
+                       forward))]
+    (merge link
+           (when mac {:mac mac})
+           (when ip {:ip ip})
+           (when forward {:forward forward}))))
 
 
 (defn link-instance-enrich
@@ -387,7 +411,7 @@ General Options:
     (if (not cmd)
       (info (str "Ignoring bridge/switch " bridge " for mode " mode))
       (P/let [_ (info "Creating bridge/switch" bridge)
-              res (run cmd)]
+              res (run* [cmd (str "ip link set " bridge " up")])]
         (if (not= 0 (:code res))
           (error (str "Unable to create bridge/switch " bridge))
           (swap! ctx assoc-in [:network-state :bridges bridge :status] :created))
@@ -509,6 +533,26 @@ General Options:
         (error (str "Unable to delete " dev-id ": " (:stderr res)))))
     res))
 
+;;; Port forward command
+
+(defn forward-modify
+  "Depending on 'action' create ('add') or delete ('del') port
+  forwards defined by :forward property of 'link'."
+  [link action]
+  (P/let [{:keys [error]} @ctx
+          {:keys [outer-dev dev-id bridge ip forward]} link]
+    (P/all (for [fwd forward]
+             (P/let [[port_a port_b proto] fwd
+                     ip (S/replace ip #"/.*" "")
+                     cmd (str "link-forward.sh " action
+                              " " DOCKER-INTF " " (:bridge bridge)
+                              " " port_a ":" ip ":" port_b "/" proto)
+                     res (run cmd {:id dev-id})]
+               (when (not= 0 (:code res))
+                 (error (str "Unable to " action " forward "
+                             "'" fwd "' for " dev-id)))
+               res)))))
+
 
 ;;; docker/docker-compose utilities
 
@@ -607,7 +651,7 @@ General Options:
   [link action]
   (P/let
     [{:keys [error log]} @ctx
-     {:keys [type outer-dev bridge dev-id]} link
+     {:keys [type outer-dev bridge dev-id forward]} link
      status-path [:network-state :devices dev-id :status]
      link-status (get-in @ctx status-path)]
     (log (str (get {"start" "Creating" "die" "Deleting"} action)
@@ -623,6 +667,7 @@ General Options:
             (if (= :patch (:mode bridge))
               (patch-add-link bridge outer-dev)
               (bridge-add-link bridge outer-dev)))
+          (when forward (forward-modify link "add"))
           (swap! ctx assoc-in status-path :created)))
 
       "die"
@@ -630,6 +675,7 @@ General Options:
         (error (str "Link " dev-id " does not exist"))
         (P/do
           (swap! ctx assoc-in status-path :deleting)
+          (when forward (forward-modify link "del"))
           (when bridge
             (if (= :patch (:mode bridge))
               (patch-drop-link bridge outer-dev)

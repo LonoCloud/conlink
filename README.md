@@ -92,28 +92,31 @@ interfaces in the host.
 
 The following table describes the link properties:
 
-| property  | link types | format     | default | description              |
-|-----------|------------|------------|---------|--------------------------|
-| type      | *          | string 1   | veth    | link/interface type      |
-| service   | *          | string     | 2       | compose service          |
-| container | *          | string     |         | container name           |
-| bridge    | veth       | string     |         | conlink bridge / domain  |
-| outer-dev | not dummy  | string[15] |         | conlink/host intf name   |
-| dev       | *          | string[15] | eth0    | container intf name      |
-| ip        | *          | CIDR       |         | IP CIDR (index offset)   |
-| mac       | 3          | MAC        |         | MAC addr (index offset)  |
-| mtu       | *          | number 4   | 65535   | intf MTU                 |
-| route     | *          | string     |         | ip route add args        |
-| nat       | *          | IP         |         | DNAT/SNAT to IP          |
-| netem     | *          | string     |         | tc qdisc NetEm options   |
-| mode      | 5          | string     |         | virt intf mode           |
-| vlanid    | vlan       | number     |         | VLAN ID                  |
+| property  | link types | format         | default | description              |
+|-----------|------------|----------------|---------|--------------------------|
+| type      | *          | string 1       | veth    | link/interface type      |
+| service   | *          | string         | 2       | compose service          |
+| container | *          | string         |         | container name           |
+| bridge    | veth       | string         |         | conlink bridge / domain  |
+| outer-dev | not dummy  | string[15]     |         | conlink/host intf name   |
+| dev       | *          | string[15]     | eth0    | container intf name      |
+| ip        | *          | CIDR           |         | IP CIDR 7                |
+| mac       | 3          | MAC            |         | MAC addr 7               |
+| mtu       | *          | number 4       | 65535   | intf MTU                 |
+| route     | *          | string         |         | ip route add args        |
+| nat       | *          | IP             |         | DNAT/SNAT to IP          |
+| netem     | *          | string         |         | tc qdisc NetEm options   |
+| mode      | 5          | string         |         | virt intf mode           |
+| vlanid    | vlan       | number         |         | VLAN ID                  |
+| forward   | veth       | string array 6 |         | forward conlink ports 7  |
 
 - 1 - veth, dummy, vlan, ipvlan, macvlan, ipvtap, macvtap
 - 2 - defaults to outer compose service
 - 3 - not ipvlan/ipvtap
 - 4 - max MTU of parent device for \*vlan, \*vtap types
 - 5 - macvlan, macvtap, ipvlan, ipvtap
+- 6 - string syntax: `conlink_port:container_port/proto`
+- 7 - offset by scale/replica index
 
 Each link has a 'type' key that defaults to "veth" and each link
 definition must also have either a `service` key or a `container` key.
@@ -134,6 +137,18 @@ than the MTU of the parent (outer-dev) device.
 
 For the `netem` property, refer to the `netem` man page. The `OPTIONS`
 grammar defines the valid strings for the `netem` property.
+
+The `forward` property is an array of strings that defines ports to
+forward from the conlink container into the container over this link.
+Traffic arriving on the conlink container's docker interface of type
+`proto` and destined for port `conlink_port` is forwarded over this
+link to the container IP and port `container_port` (`ip` is required).
+The initial port (`conlink_port`) is offset by the service
+replica/scale number (minus 1). So if the first replica has port 80
+forwarded then the second replica will have port 81 forwarded.
+For publicly publishing a port, the conlink container needs to be on
+a docker network and the `conlink_port` should match the target port
+of a docker published port (for the conlink container).
 
 ### Bridges
 
@@ -518,6 +533,54 @@ export BRIDGE_MODE="linux"  # "ovs", "patch", "auto"
 docker-compose -f examples/test9-compose.yaml up --build --force-recreate
 docker-compose -f examples/test9-compose.yaml exec node ping 10.0.1.2
 ```
+
+### test10: port forwarding
+
+This example demonstrates port forwarding from the conlink container
+to two containers running simple web servers.
+
+Start the test10 compose configuration:
+
+```
+docker-compose -f examples/test10-compose.yaml up --build --force-recreate
+```
+
+Ports 3080 and 8080 are both published on the host by the conlink
+container using standard Docker port mapping. The internal mapping of
+those ports (1080 and 1180 respectively) are both are forwarded to
+port 80 in the node1 container using conlink's port forwarding
+mechanism. The two paths look like this:
+
+```
+host:3080 --> 1080 (in conlink) --> node1:80
+host:8080 --> 1180 (in conlink) --> node1:80
+```
+
+Use curl on the host to query both of these paths to node1:
+
+```
+curl 0.0.0.0:3080
+curl 0.0.0.0:8080
+```
+
+Ports 80 and 81 are published on the host by the conlink container
+using standard Docker port mapping. Then conlink forwards from ports
+80 and 81 to the first and second replica (respectively) of node2,
+each of which listen internally on port 80. The two paths look like
+this:
+
+```
+host:80 -> 80 (in conlink) -> node2_1:80
+host:81 -> 81 (in conlink) -> node2_2:80
+```
+
+Use curl on the host to query both replicas of node2:
+
+```
+curl 0.0.0.0:80
+curl 0.0.0.0:81
+```
+
 
 ## GraphViz network configuration rendering
 
