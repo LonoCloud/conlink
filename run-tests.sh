@@ -29,37 +29,47 @@ dc_init() {
   done
 }
 
-dc_wait() {
-  local tries="${1}" cont="${2}" try=1 svc= idx= result=
+dc_run() {
+  local cont="${1}" svc= idx= result=0
   case "${cont}" in
       *_[0-9]|*_[0-9][0-9]) svc="${cont%_*}" idx="${cont##*_}" ;;
       *)                    svc="${cont}"    idx=1            ;;
   esac
-  shift; shift
+  shift
 
   #echo "target: ${1}, service: ${svc}, index: ${idx}"
+  if [ "${VERBOSE}" ]; then
+    vecho "    Running: dc exec -T --index ${idx} ${svc} sh -c ${*}"
+    dc exec -T --index ${idx} ${svc} sh -c "${*}" || result=$?
+  else
+    dc exec -T --index ${idx} ${svc} sh -c "${*}" > /dev/null || result=$?
+  fi
+  return ${result}
+}
+
+do_test() {
+  local tries="${1}"; shift
+  local name="${TEST_NUM} ${GROUP}: ${@}" try=1 result=
+  TEST_NUM=$(( TEST_NUM + 1 ))
+  vecho "  > Running test ${name}"
   while true; do
     result=0
-    if [ "${VERBOSE}" ]; then
-      vecho "Running: dc exec -T --index ${idx} ${svc} sh -c ${*}"
-      dc exec -T --index ${idx} ${svc} sh -c "${*}" || result=$?
+    if [ "${WITH_DC}" ]; then
+      dc_run "${@}" || result=$?
     else
-      dc exec -T --index ${idx} ${svc} sh -c "${*}" > /dev/null || result=$?
+      vecho "    Running: eval ${*}"
+      if [ "${VERBOSE}" ]; then
+        sh -c "${*}" || result=$?
+      else
+        sh -c "${*}" >/dev/null || result=$?
+      fi
     fi
     [ "${result}" -eq 0 -o "${try}" -ge "${tries}" ] && break
     echo "    command failed (${result}), sleeping 2s before retry (${try}/${tries})"
     sleep 2
     try=$(( try + 1 ))
   done
-  return ${result}
-}
-
-dc_test() {
-  name="${TEST_NUM} ${GROUP}: ${@}"
-  TEST_NUM=$(( TEST_NUM + 1 ))
-  vecho "  > Running test: ${name}"
-  dc_wait 1 "${@}"
-  RESULTS["${name}"]=$?
+  RESULTS["${name}"]=${result}
   if [ "${RESULTS["${name}"]}" = 0 ]; then
     PASS=$(( PASS + 1 ))
     vecho "  > PASS (0 for ${*})"
@@ -67,7 +77,11 @@ dc_test() {
     FAIL=$(( FAIL + 1 ))
     echo "  > FAIL (${RESULTS[${name}]} for ${*})"
   fi
+  return ${result}
 }
+
+dc_wait() { WITH_DC=1 do_test "${@}"; }
+dc_test() { WITH_DC=1 do_test 1 "${@}"; }
 
 
 echo -e "\n\n>>> test1: combined config"
