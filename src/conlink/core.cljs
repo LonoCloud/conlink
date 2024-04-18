@@ -59,6 +59,7 @@ General Options:
 (def VLAN-TYPES #{:vlan :macvlan :macvtap :ipvlan :ipvtap})
 (def LINK-ADD-OPTS [:ip :mac :route :mtu :nat :netem :mode :vlanid :remote :vni])
 (def INTF-MAX-LEN 15)
+(def DOCKER-INTF "DOCKER-ETH0")
 
 (def ctx (atom {:error        #(apply Eprintln "ERROR:" %&)
                 :warn         #(apply Eprintln "WARNING:" %&)
@@ -98,15 +99,17 @@ General Options:
     net-cfg))
 
 (defn enrich-link
-  "Resolve bridge name to full bridge map.
-  Add default values to a link:
+  "Check and enrich link config
+  - Resolve bridge name to full bridge map.
+  - Add default values to a link:
     - type: veth
     - dev: eth0
     - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
-  [{:as link :keys [type base bridge ip vlanid]} bridges]
+  [{:as link :keys [type base bridge ip]} bridges]
   (let [{:keys [default-mtu]} @ctx
         type (keyword (or type "veth"))
+        dev (get link :dev "eth0")
         base-default (cond (= :veth type)     :conlink
                            (VLAN-TYPES type)  :host
                            :else              :local)
@@ -114,7 +117,7 @@ General Options:
         link (merge
                link
                {:type type
-                :dev  (get link :dev "eth0")
+                :dev  dev
                 :base base}
                (when bridge
                  {:bridge (get bridges bridge)})
@@ -123,7 +126,8 @@ General Options:
     link))
 
 (defn enrich-bridge
-  "If bridge mode is :auto then return :ovs if the 'openvswitch' kernel module
+  "Check and enrich bridge config.
+  If bridge mode is :auto then return :ovs if the 'openvswitch' kernel module
   is loaded otherwise fall back to :linux. Exit with an error if mode is :ovs
   or :patch and the 'openvswitch' or 'act_mirred' kernel modules are not
   loaded respectively."
@@ -308,26 +312,36 @@ General Options:
         (P/recur cmds)
         res))))
 
+(defn kmod-loaded?
+  "Return whether kernel module 'kmod' is loaded."
+  [kmod]
+  (P/let [cmd (str "grep -o '^" kmod "\\>' /proc/modules")
+          res (run cmd {:quiet true})]
+    (and (= 0 (:code res)) (= kmod (trim (:stdout res))))))
+
+(defn intf-exists?
+  "Return whether network interface exists"
+  [intf]
+  (P/let [cmd (str "[ -d /sys/class/net/" intf " ]")
+          res (run cmd {:quiet true})]
+    (= 0 (:code res))))
+
 (defn rename-docker-eth0
-  "If eth0 exists, then rename it to DOCKER-ETH0 to prevent 'RTNETLINK
+  "Rename docker's provided eth0 to DOCKER-INTF to prevent 'RTNETLINK
   answers: File exists' errors during creation of links that use
   'eth0' device name. This is necessary because even if the netns is
   specified with the same link create command, the creation and move
   does not appear to be idempotent and results in the conflict."
   []
   (P/let [{:keys [log]} @ctx
-          res (run "[ -d /sys/class/net/eth0 ]" {:quiet true})]
-    (if (not= 0 (:code res))
-      (log "No eth0 docker network interface detected")
-      (P/let [_ (log "Renaming eth0 to DOCKER-ETH0")
-              res (run* [(str "ip route save dev eth0 > /tmp/routesave")
-                         (str "ip link set eth0 down")
-                         (str "ip link set eth0 name DOCKER-ETH0")
-                         (str "ip link set DOCKER-ETH0 up")
-                         (str "ip route restore < /tmp/routesave")]
-                        {:id "rename"})]
-        (when (not= 0 (:code res))
-          (fatal 1 "Could not rename docker eth0 interface"))))))
+          res (run* [(str "ip route save dev eth0 > /tmp/routesave")
+                     (str "ip link set eth0 down")
+                     (str "ip link set eth0 name " DOCKER-INTF)
+                     (str "ip link set " DOCKER-INTF " up")
+                     (str "ip route restore < /tmp/routesave")]
+                    {:id "rename"})]
+    (when (not= 0 (:code res))
+      (fatal 1 "Could not rename docker eth0 interface"))))
 
 (defn start-ovs
   "Start and initialize the openvswitch daemons. Exit with error if it
@@ -337,13 +351,6 @@ General Options:
     (if (not= 0 (:code res))
       (fatal 1 (str "Failed starting OVS: " (:stderr res)))
       res)))
-
-(defn kmod-loaded?
-  "Return whether kernel module 'kmod' is loaded."
-  [kmod]
-  (P/let [cmd (str "grep -o '^" kmod "\\>' /proc/modules")
-          res (run cmd {:quiet true})]
-    (and (= 0 (:code res)) (= kmod (trim (:stdout res))))))
 
 ;;; Bridge commands
 
@@ -473,7 +480,7 @@ General Options:
   line arguments from the 'link' definition and reports the results."
   [link]
   (P/let [{:keys [error]} @ctx
-          {:keys [type dev outer-dev pid outer-pid container dev-id]} link
+          {:keys [type dev outer-dev pid outer-pid dev-id]} link
           cmd (str "link-add.sh"
                    " '" (name type) "' '" pid "' '" dev "'"
                    (when outer-pid (str " --pid1 " outer-pid))
@@ -780,13 +787,16 @@ General Options:
      {:keys [network-file compose-file compose-project]} opts
      env (js->clj (js/Object.assign #js {} js/process.env))
      self-pid js/process.pid
+     self-cid (get-container-id)
      schema (load-config (:config-schema opts))
      kmod-ovs? (kmod-loaded? "openvswitch")
      kmod-mirred? (kmod-loaded? "act_mirred")
+     docker-eth0? (and self-cid (intf-exists? "eth0"))
      _ (swap! ctx merge {:default-bridge-mode (:default-bridge-mode opts)
                          :default-mtu (:default-mtu opts)
                          :kmod-ovs? kmod-ovs?
-                         :kmod-mirred? kmod-mirred?})
+                         :kmod-mirred? kmod-mirred?
+                         :docker-eth0? docker-eth0?})
      network-config (P/-> (load-configs compose-file network-file)
                           (interpolate-walk env)
                           (check-schema schema verbose)
@@ -800,7 +810,6 @@ General Options:
      _ (when (and (not docker) (not podman))
          (fatal 1 "Failed to start either docker or podman client/listener"))
 
-     self-cid (get-container-id)
      self-container-obj (when self-cid
                           (get-container (or docker podman) self-cid))
      self-container (inspect-container self-container-obj)
@@ -834,7 +843,8 @@ General Options:
       (info "Detected compose context:" compose-project))
 
     (P/do
-      (when self-cid
+      (when docker-eth0?
+        (log "Renaming eth0 to" DOCKER-INTF)
         (rename-docker-eth0))
 
       (when (some #(= :ovs (:mode %)) (-> network-config :bridges vals))
