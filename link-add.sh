@@ -45,6 +45,8 @@ usage () {
   echo >&2 ""
   echo >&2 "  --netem NETEM            - tc qdisc netem OPTIONS (man 8 netem)"
   echo >&2 "  --nat TARGET             - Stateless NAT traffic to/from TARGET"
+  echo >&2 "                             (in primary/PID0 netns)"
+  echo >&2 ""
   exit 2
 }
 
