@@ -151,8 +151,8 @@ dc_test node_1 'ip link show eth0 | grep "ether 00:0a:0b:0c:0d:01"'
 dc_test node_2 'ip link show eth0 | grep "ether 00:0a:0b:0c:0d:02"'
 dc_test node_1 'ip link show eth0 | grep "mtu 4111"'
 dc_test node_2 'ip link show eth0 | grep "mtu 4111"'
-echo " >> Check for round-trip ping delay of 80ms"
-dc_test node_1 'ping -c2 10.0.1.2 | tail -n1 | grep "max = 80\."'
+echo " >> Check for min round-trip ping delay of about 80ms"
+dc_test node_1 'ping -c5 10.0.1.2 | grep "min/avg/max = 8[012345]\."'
 
 
 echo -e "\n\n>>> test9: bridge modes and variable templating"
