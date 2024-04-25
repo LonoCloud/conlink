@@ -61,7 +61,7 @@
                   #(->> (subgraph conlink (str "cluster_bridge_" %2)
                                   %2 BRIDGE-PROPS)
                         (assoc %1 %2))
-                  {} (keep :bridge (:links network-config)))
+                  {} (map :bridge (keep :bridge (:links network-config))))
         services (reduce
                    #(->> (subgraph host (str "cluster_service_" (dot-id %2))
                                    (str "service '" (name %2) "'") SVC-PROPS)
@@ -85,7 +85,7 @@
                                    "-" (name dev)))
                 out-id (str "out-" outer-dev)
                 out-parent (condp = (keyword base)
-                             :conlink (get bridges bridge)
+                             :conlink (get bridges (:bridge bridge))
                              :host host)
                 {:keys [type vlanid]} link
                 [elabel iprops] (if (= "host" base)
