@@ -107,7 +107,7 @@ General Options:
     - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
   [{:as link :keys [type base bridge ip route forward]} bridges]
-  (let [{:keys [default-mtu docker-eth0?]} @ctx
+  (let [{:keys [default-mtu docker-eth0? docker-eth0-address]} @ctx
         type (keyword (or type "veth"))
         dev (get link :dev "eth0")
         base-default (cond (= :veth type)     :conlink
@@ -132,7 +132,9 @@ General Options:
                  {:forward
                   (map #(let [[port_a port_b proto] (S/split % #"[:/]")]
                           [(js/parseInt port_a) (js/parseInt port_b) proto])
-                       forward)}))]
+                       forward)})
+               (when (and forward docker-eth0-address)
+                 {:route (conj route (str docker-eth0-address "/32"))}))]
     (when forward
       (let [link-id (str (or (:service link) (:container link)) ":" dev)
             pre (str "link '" link-id "' has forward setting")]
@@ -353,6 +355,19 @@ General Options:
   (P/let [cmd (str "[ -d /sys/class/net/" intf " ]")
           res (run cmd {:quiet true})]
     (= 0 (:code res))))
+
+(defn intf-ipv4-addresses
+  "Return a sequence of IPv4 addresses for the interface."
+  [intf]
+  (P/let [cmd (str "ip -json addr show dev " intf)
+          res (run cmd {:quiet true})
+          addrs (when (= 0 (:code res))
+                  (js->clj (js/JSON.parse (:stdout res))
+                           :keywordize-keys true))]
+    (->> addrs
+         (mapcat :addr_info)
+         (filter #(= "inet" (:family %)))
+         (map :local))))
 
 (defn rename-docker-eth0
   "Rename docker's provided eth0 to DOCKER-INTF to prevent 'RTNETLINK
@@ -844,11 +859,13 @@ General Options:
      kmod-ovs? (kmod-loaded? "openvswitch")
      kmod-mirred? (kmod-loaded? "act_mirred")
      docker-eth0? (and self-cid (intf-exists? "eth0"))
+     docker-eth0-addresses (when docker-eth0? (intf-ipv4-addresses "eth0"))
      _ (swap! ctx merge {:default-bridge-mode (:default-bridge-mode opts)
                          :default-mtu (:default-mtu opts)
                          :kmod-ovs? kmod-ovs?
                          :kmod-mirred? kmod-mirred?
-                         :docker-eth0? docker-eth0?})
+                         :docker-eth0? docker-eth0?
+                         :docker-eth0-address (first docker-eth0-addresses)})
      network-config (P/-> (load-configs compose-file network-file)
                           (interpolate-walk env)
                           (check-schema schema verbose)
