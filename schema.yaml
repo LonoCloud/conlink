@@ -3,6 +3,7 @@ $defs:
   ip:   {type: string, pattern: "^([0-9]{1,3}[.]){3}[0-9]+$"}
   mac:  {type: string, pattern: "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"}
   intf: {type: string, pattern: "^.{1,15}$"}
+  fwd:  {type: string, pattern: "^[0-9]{1,5}:[0-9]{1,5}/(tcp|udp)$"}
 
 type: object
 additionalProperties: false
@@ -40,14 +41,16 @@ properties:
         ip:        { "$ref": "#/$defs/cidr" }
         mac:       { "$ref": "#/$defs/mac" }
         mtu:       {type: number}
-        route:     {type: string}
         nat:       { "$ref": "#/$defs/ip" }
         netem:     {type: string}
         mode:      {type: string}
         vlanid:    {type: number}
+        route:
+          oneOf: [{type: string},
+                  {type: array, items: {type: string}}]
         forward:
-          type: array
-          items: {type: string, pattern: "^[0-9]{1,5}:[0-9]{1,5}/(tcp|udp)$"}
+          oneOf: [{ "$ref": "#/$defs/fwd" },
+                  {type: array, items: { "$ref": "#/$defs/fwd" }}]
 
   bridges:
     type: array

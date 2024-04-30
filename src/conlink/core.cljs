@@ -106,7 +106,7 @@ General Options:
     - dev: eth0
     - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
-  [{:as link :keys [type base bridge ip forward]} bridges]
+  [{:as link :keys [type base bridge ip route forward]} bridges]
   (let [{:keys [default-mtu docker-eth0?]} @ctx
         type (keyword (or type "veth"))
         dev (get link :dev "eth0")
@@ -115,6 +115,8 @@ General Options:
                            :else              :local)
         base (get link :base base-default)
         bridge (get bridges bridge)
+        route (if (string? route) [route] route)
+        forward (if (string? forward) [forward] forward)
         link (merge
                link
                {:type type
@@ -124,6 +126,8 @@ General Options:
                  {:bridge bridge})
                (when (not (VLAN-TYPES type))
                  {:mtu  (get link :mtu default-mtu)})
+               (when route
+                 {:route route})
                (when forward
                  {:forward
                   (map #(let [[port_a port_b proto] (S/split % #"[:/]")]
@@ -511,9 +515,10 @@ General Options:
                    (when outer-pid (str " --pid1 " outer-pid))
                    (when outer-dev (str " --intf1 " outer-dev))
                    (S/join ""
-                           (for [o LINK-ADD-OPTS]
-                             (when-let [v (get link o)]
-                               (str " --" (name o) " '" v "'")))))
+                           (for [o LINK-ADD-OPTS
+                                 :let [v (get link o [])]
+                                 vo (if (sequential? v) v [v])]
+                             (str " --" (name o) " '" vo "'"))))
           res (run cmd {:id dev-id})]
     (when (not= 0 (:code res))
       (error (str "Unable to add " (name type) " " dev-id)))

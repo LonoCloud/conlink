@@ -7,7 +7,8 @@ services:
     command: "python3 -m http.server -d /var 80"
     x-network:
       links:
-        - {bridge: s2, ip: "10.0.1.1/24", route: "default",
+        - {bridge: s1, ip: "10.1.0.1/24",
+           route: ["default", "10.0.0.0/8 via 10.1.0.100"],
            forward: ["1080:80/tcp", "1180:80/tcp"]}
 
   node2:
@@ -17,8 +18,18 @@ services:
     command: "python3 -m http.server -d /usr 80"
     x-network:
       links:
-        - {bridge: s1, ip: "10.0.2.1/24", route: "default",
-           forward: ["80:80/tcp"]}
+        - {bridge: s2, ip: "10.2.0.1/24",
+           route: ["default", "10.0.0.0/8 via 10.2.0.100"],
+           forward: "80:80/tcp"}
+
+  router:
+    image: python:3-alpine
+    network_mode: none
+    command: sleep Infinity
+    x-network:
+      links:
+        - {bridge: s1, ip: "10.1.0.100/24", dev: es1}
+        - {bridge: s2, ip: "10.2.0.100/24", dev: es2}
 
   network:
     build: {context: ../}
