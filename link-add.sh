@@ -32,9 +32,8 @@ usage () {
   echo >&2 "  --mac  MAC0              - MAC address for INTF0"
   echo >&2 "  --mac0 MAC0              - MAC address for INTF0"
   echo >&2 "  --mac1 MAC1              - MAC address for INTF1"
-  echo >&2 "  --route  'ROUTE'         - route to add to INTF0"
-  echo >&2 "  --route|--route0 'ROUTE' - route to add to INTF0"
-  echo >&2 "  --route1 'ROUTE'         - route to add to INTF1"
+  echo >&2 "  --route|--route0 'ROUTE' - route to add to INTF0 (can repeat)"
+  echo >&2 "  --route1 'ROUTE'         - route to add to INTF1 (can repeat)"
   echo >&2 "  --mtu MTU                - MTU for both interfaces"
   echo >&2 ""
   echo >&2 "  --mode MODE              - Mode settings for *vlan TYPEs"
@@ -54,17 +53,21 @@ info() { echo "link-add [${LOG_ID}] ${*}"; }
 warn() { >&2 echo "link-add [${LOG_ID}] ${*}"; }
 die()  { warn "ERROR: ${*}"; exit 1; }
 
-# Set MAC, IP, ROUTE, MTU, and up state for interface in netns
+# Set MAC, IP, ROUTES, MTU, and up state for interface in netns
 setup_if() {
-  local IF=$1 NS=$2 MAC=$3 IP=$4 ROUTE=$5 MTU=$6
+  local IF=$1 NS=$2 MAC=$3 IP=$4 MTU=$5 ROUTES=$6 routes=
+  echo >&2 "ROUTES: ${ROUTES}"
+  while read rt; do
+      [ "${rt}" ] && routes="${routes}\nroute add ${rt} dev ${IF}"
+  done < <(echo -e "${ROUTES}")
 
-  info "Setting ${IP:+IP ${IP}, }${MAC:+MAC ${MAC}, }${MTU:+MTU ${MTU}, }${ROUTE:+ROUTE '${ROUTE}', }up state"
+  info "Setting ${IP:+IP ${IP}, }${MAC:+MAC ${MAC}, }${MTU:+MTU ${MTU}, }${ROUTES:+ROUTES '${ROUTES//$'\n'/,}', }up state"
   ip -netns ${NS} --force -b - <<EOF
       ${IP:+addr add ${IP} dev ${IF}}
       ${MAC:+link set dev ${IF} address ${MAC}}
       ${MTU:+link set dev ${IF} mtu ${MTU}}
       link set dev ${IF} up
-      ${ROUTE:+route add ${ROUTE} dev ${IF}}
+      $(echo -e "${routes}")
 EOF
 }
 
@@ -78,7 +81,7 @@ IPTABLES() {
 # Parse arguments
 VERBOSE=${VERBOSE:-}
 PID1=${PID1:-<SELF>} IF1=${IF1:-eth0}
-IP0= IP1= MAC0= MAC1= ROUTE0= ROUTE1= MTU=
+IP0= IP1= MAC0= MAC1= ROUTES0= ROUTES1= MTU=
 MODE= VLANID= REMOTE= VNI= NETEM= NAT=
 positional=
 while [ "${*}" ]; do
@@ -91,8 +94,8 @@ while [ "${*}" ]; do
   --ip1)            IP1="${OPTARG}"; shift ;;
   --mac|--mac0)     MAC0="${OPTARG}"; shift ;;
   --mac1)           MAC1="${OPTARG}"; shift ;;
-  --route|--route0) ROUTE0="${OPTARG}"; shift ;;
-  --route1)         ROUTE1="${OPTARG}"; shift ;;
+  --route|--route0) ROUTES0="${ROUTES0}\n${OPTARG}"; shift ;;
+  --route1)         ROUTES1="${ROUTES1}\n${OPTARG}"; shift ;;
   --mtu)            MTU="${OPTARG}"; shift ;;
 
   --mode)           MODE="${OPTARG}"; shift ;;
@@ -108,6 +111,8 @@ while [ "${*}" ]; do
   esac
   shift
 done
+ROUTES0="${ROUTES0#\\n}"
+ROUTES1="${ROUTES1#\\n}"
 set -- ${positional}
 TYPE=$1 PID0=$2 IF0=$3
 
@@ -181,9 +186,9 @@ geneve|vxlan)
   ;;
 esac
 
-setup_if ${IF0} ${NS0} "${MAC0}" "${IP0}" "${ROUTE0}" "${MTU}"
+setup_if ${IF0} ${NS0} "${MAC0}" "${IP0}" "${MTU}" "${ROUTES0}"
 [ "${TYPE}" = "veth" ] && \
-  setup_if ${IF1} ${NS1} "${MAC1}" "${IP1}" "${ROUTE1}" "${MTU}"
+  setup_if ${IF1} ${NS1} "${MAC1}" "${IP1}" "${MTU}" "${ROUTES1}"
 
 if [ "${NETEM}" ]; then
   info "Setting tc qdisc netem: ${NETEM}"

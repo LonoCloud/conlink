@@ -188,10 +188,14 @@ echo -e "\n\n>>> test10: port forwarding"
 GROUP=test10
 echo "COMPOSE_FILE=examples/test10-compose.yaml" > .env
 
-dc_init; dc_wait 10 node1_1 'ip addr | grep "10\.0\.1\.1"' \
+dc_init; dc_wait 10 node1_1 'ip addr | grep "10\.1\.0\.1"' \
     || die "test10 startup failed"
 echo " >> Check ping between replicas"
-dc_test node2_1 'ping -c2 10.0.2.2'
+dc_test node2_1 'ping -c2 10.2.0.2'
+echo " >> Check pings across router"
+dc_test node1_1 'ping -c2 10.2.0.1'
+dc_test node1_1 'ping -c2 10.2.0.2'
+dc_test node2_1 'ping -c2 10.1.0.1'
 echo " >> Ensure ports are forwarded correctly"
 do_test 10 'curl -s -S "http://0.0.0.0:3080" | grep "log"'
 do_test 10 'curl -s -S "http://0.0.0.0:8080" | grep "log"'

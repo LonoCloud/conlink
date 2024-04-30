@@ -534,10 +534,12 @@ docker-compose -f examples/test9-compose.yaml up --build --force-recreate
 docker-compose -f examples/test9-compose.yaml exec node ping 10.0.1.2
 ```
 
-### test10: port forwarding
+### test10: port forwarding and routing
 
 This example demonstrates port forwarding from the conlink container
-to two containers running simple web servers.
+to two containers running simple web servers. It also demonstrates the
+use of a router container and multiple route rules in the other
+containers.
 
 Start the test10 compose configuration:
 
@@ -579,6 +581,22 @@ Use curl on the host to query both replicas of node2:
 ```
 curl 0.0.0.0:80
 curl 0.0.0.0:81
+```
+
+Start a two tcpdump processes in the conlink container to watch
+routed ICMP traffic and then ping between containers across the router
+container:
+
+```
+docker compose -f examples/test10-compose.yaml exec network tcpdump -nli router_1-es1 icmp
+docker compose -f examples/test10-compose.yaml exec network tcpdump -nli router_1-es2 icmp
+```
+
+```
+docker-compose -f examples/test10-compose.yaml exec node1 ping 10.2.0.1
+docker-compose -f examples/test10-compose.yaml exec node1 ping 10.2.0.2
+docker-compose -f examples/test10-compose.yaml exec node2 ping 10.1.0.1
+
 ```
 
 
