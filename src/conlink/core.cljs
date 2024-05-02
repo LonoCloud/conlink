@@ -411,7 +411,8 @@ General Options:
     (if (not cmd)
       (info (str "Ignoring bridge/switch " bridge " for mode " mode))
       (P/let [_ (info "Creating bridge/switch" bridge)
-              res (run* [cmd (str "ip link set " bridge " up")])]
+              res (run* [cmd (str "ip link set " bridge " up")]
+                        {:id "bridge-create"})]
         (if (not= 0 (:code res))
           (error (str "Unable to create bridge/switch " bridge))
           (swap! ctx assoc-in [:network-state :bridges bridge :status] :created))
