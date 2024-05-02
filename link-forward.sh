@@ -37,7 +37,8 @@ LOG_ID="${spec}"
 info "${action^} forwarding ${intf_a} -> ${intf_b}"
 
 IPTABLES PREROUTING -t nat -i ${intf_a} -p ${proto} --dport ${port_a} -j DNAT --to-destination ${ip}:${port_b}
-IPTABLES POSTROUTING -t nat -o ${intf_b} -j MASQUERADE
+IPTABLES PREROUTING -t nat -i ${intf_a} -p ${proto} --dport ${port_a} -j MARK --set-mark 1
+IPTABLES POSTROUTING -t nat -o ${intf_b} -m mark --mark 1 -j MASQUERADE
 
 case "${action}" in
   add) ip route replace ${ip} dev ${intf_b} ;;
