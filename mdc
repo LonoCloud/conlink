@@ -20,7 +20,7 @@ DOCKER_COMPOSE="${DOCKER_COMPOSE:-docker-compose}"
 [ -f "${RESOLVE_DEPS}" ] || die "Missing ${RESOLVE_DEPS}. Perhaps 'npm install'?"
 MODE_SPEC="${1}"; shift
 if [ "${RESOLVE_DEPS}" ]; then
-    MODES="$(${RESOLVE_DEPS} "${MODES_DIR}" ${MODE_SPEC})"
+    MODES="$(${RESOLVE_DEPS} --path "${MODES_DIR}" ${MODE_SPEC})"
 else
     MODES="${MODE_SPEC//,/ }"
 fi

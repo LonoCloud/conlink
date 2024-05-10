@@ -5,7 +5,7 @@
   "repository": "https://github.com/LonoCloud/conlink",
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
-    "@lonocloud/resolve-deps": "^0.0.2",
+    "@lonocloud/resolve-deps": "^0.1.0",
     "ajv": "^8.12.0",
     "dockerode": "^3.3.4",
     "nbb": "^1.2.179",
