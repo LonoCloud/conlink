@@ -46,7 +46,8 @@ dst_dir="${1}"; shift || die 2 "Usage: ${0} [-T|--template] SRC_DIR DST_DIR"
 done
 
 if [ "${*}" ]; then
-    exec "${@}"
+  echo "Running: ${*}"
+  exec "${@}"
 else
-    true
+  true
 fi

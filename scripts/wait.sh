@@ -69,5 +69,5 @@ done
 
 if [ "${*}" ]; then
   echo "Running: ${*}"
-  exec ${*}
+  exec "${@}"
 fi
