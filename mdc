@@ -17,21 +17,18 @@ LS=$(which ls)
 RESOLVE_DEPS="${RESOLVE_DEPS-./node_modules/@lonocloud/resolve-deps/resolve-deps.py}"
 DOCKER_COMPOSE="${DOCKER_COMPOSE:-docker-compose}"
 
-[ -f "${RESOLVE_DEPS}" ] || die "Missing ${RESOLVE_DEPS}. Perhaps 'npm install'?"
+which ${RESOLVE_DEPS} >/dev/null 2>/dev/null \
+  || die "Missing ${RESOLVE_DEPS}. Perhaps 'npm install'?"
+
+# Resolve mode directory paths
+
 MODE_SPEC="${1}"; shift
-if [ "${RESOLVE_DEPS}" ]; then
-    MODES="$(${RESOLVE_DEPS} --path "${MODES_DIR}" ${MODE_SPEC})"
-else
-    MODES="${MODE_SPEC//,/ }"
-fi
+RESOLVED_MODES="$(${RESOLVE_DEPS} --path "${MODES_DIR}" --format=paths ${MODE_SPEC})"
 
-echo >&2 "MODES:    ${MODES}"
-vecho "ENV_FILE: ${ENV_FILE}"
+# Create base (empty) compose file to anchor mode relative paths
+# to the same root directory.  Create files dir.
 
-declare -A FINISHED
 COMPOSE_FILE=./.compose-empty.yaml
-COMPOSE_PROFILES=
-MDC_MODE_DIRS=
 cat /dev/null > ${ENV_FILE}-mdc-tmp
 echo -e "version: '2.4'\nservices: {}" > ./.compose-empty.yaml
 
@@ -42,19 +39,25 @@ esac
 [ -d "${MDC_FILES_DIR}" ] && rm -r${VERBOSE:+v} ${MDC_FILES_DIR}/
 mkdir -p "${MDC_FILES_DIR}"
 
-for mode in ${MODES}; do
+# Incorporate modes' compose config, env, and files
+
+declare -A FINISHED
+COMPOSE_PROFILES=
+MDC_MODE_NAMES=
+MDC_MODE_DIRS=
+for resolved in ${RESOLVED_MODES}; do
+    mode=${resolved%=*}
+    path=${resolved#*=}
+
     # Only process each mode once
     [ "${FINISHED[${mode}]}" ] && continue
     FINISHED["${mode}"]=1
 
-    # mode dir must exist
-    [ -d "${MODES_DIR}/${mode}" ] || \
-        die "No mode dir found for ${mode}"
-
-    MDC_MODE_DIRS="${MDC_MODE_DIRS},${MODES_DIR}/${mode}"
+    MDC_MODE_NAMES="${MDC_MODE_NAMES} ${mode}"
+    MDC_MODE_DIRS="${MDC_MODE_DIRS},${path}"
 
     # mode can refer to a compose file in multiple ways
-    cfiles="${MODES_DIR}/${mode}/compose.yaml ${MODES_DIR}/${mode}/compose.yml ${MODES_DIR}/${mode}/docker-compose.yaml ${MODES_DIR}/${mode}/docker-compose.yml"
+    cfiles="${path}/compose.yaml ${path}/compose.yml ${path}/docker-compose.yaml ${path}/docker-compose.yml"
     for cfile in ${cfiles}; do
         if [ -e "${cfile}" ]; then
             COMPOSE_FILE="${COMPOSE_FILE}:${cfile}"
@@ -66,26 +69,33 @@ for mode in ${MODES}; do
     COMPOSE_PROFILES="${COMPOSE_PROFILES},MODE_${mode}"
 
     # if there is a mode specific env file then include it
-    efiles="${MODES_DIR}/${mode}/env ${MODES_DIR}/${mode}/.env"
+    efiles="${path}/env ${path}/.env"
     for efile in ${efiles}; do
         if [ -e "${efile}" ]; then
-            echo "### mdc begin mode ${mode}" >> ${ENV_FILE}-mdc-tmp
+            echo "### mdc begin mode ${mode} (${efile})" >> ${ENV_FILE}-mdc-tmp
             vecho "cat ${efile} >> ${ENV_FILE}-mdc-tmp"
             cat ${efile} >> ${ENV_FILE}-mdc-tmp
-            echo "### mdc end mode ${mode}" >> ${ENV_FILE}-mdc-tmp
+            echo "### mdc end mode ${mode} (${efile})" >> ${ENV_FILE}-mdc-tmp
         fi
     done
 
     # if there are mode specific files then copy them to MDC_FILES_DIR
-    if [ -d "${MODES_DIR}/${mode}" ]; then
-        for vfd in $(cd ${MODES_DIR}/${mode} && $LS -d */files 2>/dev/null || true); do
+    if [ -d "${path}" ]; then
+        for vfd in $(cd ${path} && $LS -d */files 2>/dev/null || true); do
             dest=${MDC_FILES_DIR}/${vfd%/files}
             mkdir -p ${dest}
-            vecho cp -a ${MODES_DIR}/${mode}/${vfd}/* ${dest}
-            cp -a ${MODES_DIR}/${mode}/${vfd}/* ${dest}
+            vecho cp -a ${path}/${vfd}/* ${dest}
+            cp -a ${path}/${vfd}/* ${dest}
         done
     fi
 done
+
+vecho
+
+# Summarize and set env
+
+echo >&2 "MODES: ${MDC_MODE_NAMES}"
+vecho "ENV_FILE: ${ENV_FILE}"
 
 COMPOSE_FILE="${COMPOSE_FILE#:}"
 vecho "COMPOSE_FILE: ${COMPOSE_FILE}"
@@ -99,6 +109,8 @@ echo "COMPOSE_PROFILES=${COMPOSE_PROFILES}" >> ${ENV_FILE}-mdc-tmp
 MDC_MODE_DIRS="${MDC_MODE_DIRS#,}"
 vecho "MDC_MODE_DIRS: ${MDC_MODE_DIRS}"
 echo "MDC_MODE_DIRS=\"${MDC_MODE_DIRS}\"" >> ${ENV_FILE}-mdc-tmp
+
+vecho
 
 vecho mv ${ENV_FILE}-mdc-tmp ${ENV_FILE}
 mv ${ENV_FILE}-mdc-tmp ${ENV_FILE}
