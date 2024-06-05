@@ -19,6 +19,6 @@ jobs:
       - name: compose build of conlink
         run: docker compose -f examples/test1-compose.yaml build
 
-      - name: "./run-tests.sh"
+      - name: "dctest test/test*.yaml"
         timeout-minutes: 5
-        run: time ./run-tests.sh
+        run: time node_modules/.bin/dctest --verbose-commands conlink-test $(ls -v test/test*.yaml)

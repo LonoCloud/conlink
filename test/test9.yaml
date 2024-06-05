@@ -1,0 +1,83 @@
+name: "test9: bridge modes and variable templating" 
+
+env:
+  DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
+  COMPOSE_FILE: examples/test9-compose.yaml
+
+tests:
+  auto:
+    name: "bridge mode: auto"
+    env:
+      BRIDGE_MODE: auto
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - exec: node
+        run: ip addr | grep "10\.0\.1\.1"
+        repeat: { retries: 10, interval: '2s' }
+
+      # Check for round-trip ping connectivity
+      - {exec: node, index: 1, run: ping -c1 -w2 10.0.1.2}
+      - {exec: node, index: 2, run: ping -c1 -w2 10.0.1.1}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1
+
+  linux:
+    name: "bridge mode: linux"
+    env:
+      BRIDGE_MODE: linux
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - exec: node
+        run: ip addr | grep "10\.0\.1\.1"
+        repeat: { retries: 10, interval: '2s' }
+
+      # Check for round-trip ping connectivity
+      - {exec: node, index: 1, run: ping -c1 -w2 10.0.1.2}
+      - {exec: node, index: 2, run: ping -c1 -w2 10.0.1.1}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1
+
+  patch:
+    name: "bridge mode: patch"
+    env:
+      BRIDGE_MODE: patch
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - exec: node
+        run: ip addr | grep "10\.0\.1\.1"
+        repeat: { retries: 10, interval: '2s' }
+
+      # Ensure ingest filter rules exist
+      - {exec: network, run: 'tc filter show dev node_1-eth0 parent ffff: | grep "action order 1: mirred"'}
+      # Check for round-trip ping connectivity
+      - {exec: node, index: 1, run: ping -c1 -w2 10.0.1.2}
+      - {exec: node, index: 2, run: ping -c1 -w2 10.0.1.1}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1

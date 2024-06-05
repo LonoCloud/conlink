@@ -1,0 +1,80 @@
+name: "test4: multiple compose and mdc" 
+
+env:
+  DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
+  MODES_DIR: examples/test4-multiple/modes
+
+tests:
+  node1:
+    name: "mdc node1"
+    steps:
+      - exec: :host
+        run: |
+          ./mdc node1
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - exec: r0
+        run: ip addr | grep "10\.1\.0\.100"
+        repeat: { retries: 10, interval: '2s' }
+
+      # Ping the r0 router host from node1
+      - {exec: node1, index: 1, run: ping -c1 -w2 10.0.0.100}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1
+
+  node1-nodes2:
+    name: "mdc node1,nodes2"
+    steps:
+      - exec: :host
+        run: |
+          ./mdc node1,nodes2
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - exec: node2
+        index: 2
+        run: ip addr | grep "10\.2\.0\.2"
+        repeat: { retries: 10, interval: '2s' }
+
+      # From both node2 replicas, ping node1 across the r0 router
+      - {exec: node2, index: 1, run: ping -c1 -w2 10.1.0.1}
+      - {exec: node2, index: 2, run: ping -c1 -w2 10.1.0.1}
+      # From node1, ping both node2 replicas across the r0 router
+      - {exec: node1, index: 1, run: ping -c1 -w2 10.2.0.1}
+      - {exec: node1, index: 1, run: ping -c1 -w2 10.2.0.2}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1
+
+  all:
+    name: "mdc all"
+    steps:
+      - exec: :host
+        run: |
+          ./mdc all
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - exec: r0
+        run: /scripts/wait.sh -t 10.0.0.100:80
+
+      # From node2, download from the web server in r0
+      - {exec: node2, index: 1, run: wget -O- 10.0.0.100}
+      - {exec: node2, index: 2, run: wget -O- 10.0.0.100}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1

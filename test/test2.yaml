@@ -1,0 +1,37 @@
+name: "test2: separate config and scaling" 
+
+env:
+  DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
+  COMPOSE_FILE: examples/test2-compose.yaml
+
+tests:
+  test2:
+    name: "separate config and scaling" 
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - {exec: node, index: 1, run: ping -c1 -w2 10.0.1.2}
+      - {exec: node, index: 2, run: ping -c1 -w2 10.0.1.1}
+      - {exec: node, index: 1, run: ping -c1 -w2 8.8.8.8}
+      - {exec: node, index: 2, run: ping -c1 -w2 8.8.8.8}
+
+      - exec: :host
+        run: |
+          echo "Scale the nodes from 2 to 5"
+          ${DC} up -d --scale node=5
+      - exec: node
+        index: 5
+        run: ip addr | grep "10\.0\.1\.5"
+        repeat: { retries: 10, interval: '2s' }
+      - {exec: node, index: 2, run: ping -c1 -w2 10.0.1.5}
+      - {exec: node, index: 5, run: ping -c1 -w2 8.8.8.8}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1

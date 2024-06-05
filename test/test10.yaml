@@ -1,0 +1,46 @@
+name: "test10: port forwarding" 
+
+env:
+  DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
+  COMPOSE_FILE: examples/test10-compose.yaml
+
+tests:
+  test10:
+    name: "port forwarding"
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - exec: node1
+        run: ip addr | grep "10\.1\.0\.1"
+        repeat: { retries: 10, interval: '2s' }
+
+      # Check ping between replicas
+      - {exec: node2, run: ping -c1 -w2 10.2.0.2}
+      # Check ping across router
+      - {exec: node1, run: ping -c1 -w2 10.2.0.1}
+      - {exec: node1, run: ping -c1 -w2 10.2.0.2}
+      - {exec: node2, run: ping -c1 -w2 10.1.0.1}
+      # Check ping across router
+      - exec: :host
+        run: 'curl -sS "http://0.0.0.0:3080" | grep "log"'
+        repeat: { retries: 10, interval: '2s' }
+      - exec: :host
+        run: 'curl -sS "http://0.0.0.0:8080" | grep "log"'
+        repeat: { retries: 10, interval: '2s' }
+      - exec: :host
+        run: 'curl -sS "http://0.0.0.0:80" | grep "share"'
+        repeat: { retries: 10, interval: '2s' }
+      - exec: :host
+        run: 'curl -sS "http://0.0.0.0:81" | grep "share"'
+        repeat: { retries: 10, interval: '2s' }
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1
+
