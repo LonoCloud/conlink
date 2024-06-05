@@ -1,0 +1,26 @@
+name: "test1: compose file with embedded network config"
+
+env:
+  DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
+  COMPOSE_FILE: examples/test1-compose.yaml
+
+tests:
+  test1:
+    name: "compose file with embedded network config"
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+
+      - {exec: h1, run: ping -c1 -w2 10.0.0.100}
+      - {exec: h2, run: ping -c1 -w2 192.168.1.100}
+      - {exec: h3, run: ping -c1 -w2 172.16.0.100}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1

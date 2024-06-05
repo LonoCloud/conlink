@@ -1,0 +1,34 @@
+name: "test7: MAC, MTU, and NetEm settings" 
+
+env:
+  DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
+  COMPOSE_FILE: examples/test7-compose.yaml
+
+tests:
+  test7:
+    name: "MAC, MTU, and NetEm settings"
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+      - exec: node
+        run: ip addr | grep "10\.0\.1\.1"
+        repeat: { retries: 10, interval: '2s' }
+
+      # Ensure MAC and MTU are set correctly
+      - {exec: node, index: 1, run: ip link show eth0 | grep "ether 00:0a:0b:0c:0d:01"}
+      - {exec: node, index: 2, run: ip link show eth0 | grep "ether 00:0a:0b:0c:0d:02"}
+      - {exec: node, index: 1, run: ip link show eth0 | grep "mtu 4111"}
+      - {exec: node, index: 2, run: ip link show eth0 | grep "mtu 4111"}
+      # Check for round-trip ping delay of 80ms
+      - {exec: node, index: 1, run: 'ping -c5 10.0.1.2 | tail -n1 | grep "min/avg/max = 8[012345]\."'}
+      - {exec: node, index: 2, run: 'ping -c5 10.0.1.1 | tail -n1 | grep "min/avg/max = 8[012345]\."'}
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1
