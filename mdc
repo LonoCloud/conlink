@@ -75,6 +75,7 @@ for resolved in ${RESOLVED_MODES}; do
             echo "### mdc begin mode ${mode} (${efile})" >> ${ENV_FILE}-mdc-tmp
             vecho "cat ${efile} >> ${ENV_FILE}-mdc-tmp"
             cat ${efile} >> ${ENV_FILE}-mdc-tmp
+            echo >> ${ENV_FILE}-mdc-tmp
             echo "### mdc end mode ${mode} (${efile})" >> ${ENV_FILE}-mdc-tmp
         fi
     done
