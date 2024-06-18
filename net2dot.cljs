@@ -29,7 +29,7 @@
       (S/replace #"[*]" "_STAR_")
       (S/replace #"[$]" "_DOLLAR_")
       (S/replace #"[{]" "_LCURLY_")
-      (S/replace #"[}]" "_LCURLY_")
+      (S/replace #"[}]" "_RCURLY_")
       (S/replace #"[ ]" "_SPACE_")))
 
 (defn node-props [label props]
