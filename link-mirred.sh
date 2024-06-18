@@ -34,41 +34,20 @@ die()  { warn "ERROR: ${*}"; exit 1; }
 add_ingress() {
   local IF=$1 res=
 
-  res=$(tc qdisc show dev ${IF} 2>&1)
-  case "${res}" in
-    *"qdisc ingress ffff:"*)
-      info "${IF0} already has ingress qdisc"
-      ;;
-    ""|*"qdisc noqueue"*)
-      info "Adding ingress qdisc to ${IF}"
-      tc qdisc add dev "${IF}" ingress \
-        || die "Could not add ingress qdisc to ${IF}"
-      ;;
-    *)
-      die "${IF} has invalid ingress qdisc or could not be queried"
-      ;;
-  esac
+  info "Adding ingress qdisc to ${IF}"
+  tc qdisc replace dev "${IF}" ingress \
+    || die "Could not add ingress qdisc to ${IF}"
 }
 
 # Idempotently add mirred filter redirect rule to an interface
 add_mirred() {
   local IF0=$1 IF1=$2 res=
 
-  res=$(tc filter show dev ${IF0} parent ffff: 2>&1)
-  case "${res}" in
-    *"action order 1: mirred (Egress Redirect to device ${IF1}"*)
-      info "${IF0} already has filter redirect action"
-      ;;
-    "")
-      info "Adding filter redirect action from ${IF0} to ${IF1}"
-      tc filter add dev ${IF0} parent ffff: protocol all u32 match u8 0 0 action \
-        mirred egress redirect dev ${IF1} \
-        || die "Could not add filter redirect action from ${IF0} to ${IF1}"
-      ;;
-    *)
-      die "${IF0} has invalid filter redirect action or could not be queried"
-      ;;
-  esac
+  info "Adding filter redirect action from ${IF0} to ${IF1}"
+  tc filter del dev ${IF0} root
+  tc filter replace dev ${IF0} parent ffff: protocol all u32 match u8 0 0 action \
+    mirred egress redirect dev ${IF1} \
+    || die "Could not add filter redirect action from ${IF0} to ${IF1}"
 }
 
 # Parse arguments
