@@ -531,7 +531,7 @@ validate connectivity using ping:
 ```
 export BRIDGE_MODE="linux"  # "ovs", "patch", "auto"
 docker-compose -f examples/test9-compose.yaml up --build --force-recreate
-docker-compose -f examples/test9-compose.yaml exec node ping 10.0.1.2
+docker-compose -f examples/test9-compose.yaml exec node1 ping 10.0.1.2
 ```
 
 ### test10: port forwarding and routing
