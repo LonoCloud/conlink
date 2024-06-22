@@ -77,6 +77,11 @@ General Options:
 (defn indent-pprint-str [o pre]
   (indent (trim (with-out-str (pprint o))) pre))
 
+(defn random-mac
+  "Return a random MAC address starting with '0xc2'"
+  []
+  (addrs/int->mac (reduce #(+ (rand-int 256) (* %1 256))
+                          0xc2 [1 2 3 4 5])))
 
 (defn load-configs
   "Load network configs from a list of compose file paths and a list
@@ -104,12 +109,14 @@ General Options:
   - Add default values to a link:
     - type: veth
     - dev: eth0
+    - mac: random MAC starting with first octet of 'c2'
     - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
   [{:as link :keys [type base bridge ip route forward]} bridges]
   (let [{:keys [default-mtu docker-eth0? docker-eth0-address]} @ctx
         type (keyword (or type "veth"))
         dev (get link :dev "eth0")
+        mac (get link :mac (random-mac))
         base-default (cond (= :veth type)     :conlink
                            (VLAN-TYPES type)  :host
                            :else              :local)
@@ -121,7 +128,8 @@ General Options:
                link
                {:type type
                 :dev  dev
-                :base base}
+                :base base
+                :mac mac}
                (when bridge
                  {:bridge bridge})
                (when (not (VLAN-TYPES type))
