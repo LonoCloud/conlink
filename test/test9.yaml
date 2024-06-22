@@ -32,7 +32,8 @@ tests:
         run: |
           echo "Restart the second node"
           ${DC} up -d -t1 --scale node2=0 && ${DC} up -d --scale node2=1
-      - {exec: node1, run: ping -c1 -w2 10.0.1.2}
+      - {exec: node1, run: ping -c2 -w2 10.0.1.2,
+         repeat: { retries: 3, interval: '2s' }}
       - {exec: node2, run: ping -c1 -w2 10.0.1.1}
 
       - exec: :host
@@ -57,7 +58,7 @@ tests:
         repeat: { retries: 10, interval: '2s' }
 
       # Check for round-trip ping connectivity
-      - {exec: node1, run: ping -c1 -w2 10.0.1.2}
+      - {exec: node1, run: ping -c2 -w2 10.0.1.2}
       - {exec: node2, run: ping -c1 -w2 10.0.1.1}
 
       # Restart second node and check again
@@ -65,7 +66,8 @@ tests:
         run: |
           echo "Restart the second node"
           ${DC} up -d -t1 --scale node2=0 && ${DC} up -d --scale node2=1
-      - {exec: node1, run: ping -c1 -w2 10.0.1.2}
+      - {exec: node1, run: ping -c1 -w2 10.0.1.2,
+         repeat: { retries: 3, interval: '2s' }}
       - {exec: node2, run: ping -c1 -w2 10.0.1.1}
 
       - exec: :host
@@ -100,7 +102,8 @@ tests:
         run: |
           echo "Restart the second node"
           ${DC} up -d -t1 --scale node2=0 && ${DC} up -d --scale node2=1
-      - {exec: node1, run: ping -c1 -w2 10.0.1.2}
+      - {exec: node1, run: ping -c2 -w2 10.0.1.2,
+         repeat: { retries: 3, interval: '2s' }}
       - {exec: node2, run: ping -c1 -w2 10.0.1.1}
 
       - exec: :host

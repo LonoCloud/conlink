@@ -286,7 +286,6 @@ General Options:
   container properties from an event and the current pid of the
   network container. Updates iterable properties of the link
   (via link-add-offset) and adds the following keys:
-  - :container - the container properties (passed in)
   - :outer-pid - PID of the network namespace (passed in)
   - :pid - PID of this container
   - :dev-id - container name + container interface name
@@ -302,8 +301,7 @@ General Options:
         link (if (and outer-pid (not (:outer-dev link)))
                (assoc link :outer-dev (link-outer-dev link id index))
                link)
-        link (merge link {:container container
-                          :dev-id dev-id
+        link (merge link {:dev-id dev-id
                           :pid pid
                           :outer-pid outer-pid})]
     link))
@@ -569,7 +567,7 @@ General Options:
   forwards defined by :forward property of 'link'."
   [link action]
   (P/let [{:keys [error]} @ctx
-          {:keys [outer-dev dev-id bridge ip forward]} link]
+          {:keys [dev-id bridge ip forward]} link]
     (P/all (for [fwd forward]
              (P/let [[port_a port_b proto] fwd
                      ip (S/replace ip #"/.*" "")
@@ -633,6 +631,18 @@ General Options:
                         (S/replace #"\." "-")))
            v])))
 
+(defn query-container-data
+  [container-obj]
+  (P/let
+    [container (inspect-container container-obj)
+     clabels (get-compose-labels container)
+     svc-num (:container-number clabels)]
+    {:name (->> container :Name (re-seq #"(.*/)?(.*)") first last)
+     :index (if svc-num (js/parseInt svc-num) 1)
+     :service (:service clabels)
+     :pid (-> container :State :Pid)
+     :labels clabels}))
+
 ;;;
 
 (defn docker-client
@@ -688,7 +698,7 @@ General Options:
     (condp = action
       "start"
       (if link-status
-        (error (str "Link " dev-id " already exists"))
+        (error (str "Link " dev-id " already in state: " link-status))
         (P/do
           (swap! ctx assoc-in status-path :creating)
           (link-add link)
@@ -759,29 +769,26 @@ General Options:
   if all containers/services are connected."
   [client {:keys [status id]}]
   (P/let
-    [{:keys [log info network-config compose-opts self-pid]} @ctx
+    [{:keys [log info network-config network-state compose-opts self-pid]} @ctx
      container-obj (get-container client id)
-     container (inspect-container container-obj)
-     cname (->> container :Name (re-seq #"(.*/)?(.*)") first last)
-     pid (-> container :State :Pid)
-
-     clabels (get-compose-labels container)
-     svc-name (:service clabels)
-     svc-num (:container-number clabels)
-     cindex (if svc-num (js/parseInt svc-num) 1)
-     container-info {:id id
-                     :name cname
-                     :index cindex
-                     :service svc-name
-                     :pid pid
-                     :labels clabels}
+     container-data (if (= "die" status)
+                      (P/let [ci (get-in network-state [:containers id])]
+                        (swap! ctx update-in [:network-state :containers]
+                               dissoc id)
+                        ci)
+                      (P/let [ci (query-container-data container-obj)]
+                        (swap! ctx update-in [:network-state :containers]
+                               assoc id ci)
+                        ci))
+     {cname :name clabels :labels} container-data
 
      svc-match? (and (let [p (:project compose-opts)]
                        (or (not p) (= p (:project clabels))))
                      (let [d (:project-working_dir compose-opts)]
                        (or (not d) (= d (:project-working_dir clabels)))))
      containers (get-in network-config [:containers cname])
-     services (when svc-match? (get-in network-config [:services svc-name]))
+     services (when svc-match?
+                (get-in network-config [:services (:service clabels)]))
      links (concat (:links containers) (:links services))
      commands (concat (:commands containers) (:commands services))]
     (if (and (not (seq links)) (not (seq commands)))
@@ -790,7 +797,7 @@ General Options:
         (info "Event:" status cname id)
         (P/all (for [link links
                      :let [link (link-instance-enrich
-                                  link container-info self-pid)]]
+                                  link container-data self-pid)]]
                  (modify-link link status)))
         (when (= "start" status)
           (P/all (for [{:keys [command]} commands]
