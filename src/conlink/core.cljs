@@ -112,8 +112,9 @@ General Options:
     - mac: random MAC starting with first octet of 'c2'
     - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
-  [{:as link :keys [type base bridge ip route forward]} bridges]
-  (let [{:keys [default-mtu docker-eth0? docker-eth0-address]} @ctx
+  [{:as link :keys [type base bridge ip route forward netem]} bridges opts]
+  (let [{:keys [docker-eth0? docker-eth0-address]} @ctx
+        {:keys [default-mtu]} opts
         type (keyword (or type "veth"))
         dev (get link :dev "eth0")
         mac (get link :mac (random-mac))
@@ -165,8 +166,9 @@ General Options:
   is loaded otherwise fall back to :linux. Exit with an error if mode is :ovs
   or :patch and the 'openvswitch' or 'act_mirred' kernel modules are not
   loaded respectively."
-  [{:as bridge-opts :keys [bridge mode]}]
-  (let [{:keys [warn default-bridge-mode kmod-ovs? kmod-mirred?]} @ctx
+  [{:as bridge-opts :keys [bridge mode]} opts]
+  (let [{:keys [warn kmod-ovs? kmod-mirred?]} @ctx
+        {:keys [default-bridge-mode]} opts
         mode (keyword (or mode default-bridge-mode))
         _ (when (and (= :ovs mode) (not kmod-ovs?))
             (fatal 1 (str "bridge " bridge " mode is 'ovs', "
@@ -189,8 +191,9 @@ General Options:
   add :bridges, :containers, and :services maps with restructured bridge, link,
   and command configuration to provide a more efficient structure for looking
   up configuration later."
-  [{:as cfg :keys [links commands bridges]}]
-  (let [bridge-map (reduce (fn [acc b] (assoc acc (:bridge b) b))
+  [{:as cfg :keys [links bridges tunnels commands]} opts]
+  (let [bridge-map (reduce (fn [bs b]
+                             (assoc bs (:bridge b) b))
                            {} bridges)
         ;; Add bridges specified in links only
         all-bridges (reduce (fn [bs b]
@@ -198,9 +201,10 @@ General Options:
                             bridge-map
                             (keep :bridge links))
         ;; Enrich each bridge
-        bridges (reduce (fn [bs [k v]] (assoc bs k (enrich-bridge v)))
+        bridges (reduce (fn [bs [k v]]
+                          (assoc bs k (enrich-bridge v opts)))
                         {} all-bridges)
-        links (mapv #(enrich-link % bridges) links)
+        links (mapv #(enrich-link % bridges opts) links)
         cfg (merge cfg {:links links
                         :bridges bridges
                         :containers {}
@@ -877,16 +881,14 @@ General Options:
      kmod-mirred? (kmod-loaded? "act_mirred")
      docker-eth0? (and self-cid (intf-exists? "eth0"))
      docker-eth0-addresses (when docker-eth0? (intf-ipv4-addresses "eth0"))
-     _ (swap! ctx merge {:default-bridge-mode (:default-bridge-mode opts)
-                         :default-mtu (:default-mtu opts)
-                         :kmod-ovs? kmod-ovs?
+     _ (swap! ctx merge {:kmod-ovs? kmod-ovs?
                          :kmod-mirred? kmod-mirred?
                          :docker-eth0? docker-eth0?
                          :docker-eth0-address (first docker-eth0-addresses)})
      network-config (P/-> (load-configs compose-file network-file)
                           (interpolate-walk env)
                           (check-schema schema verbose)
-                          (enrich-network-config))
+                          (enrich-network-config opts))
      _ (when show-config
          (println (js/JSON.stringify (->js network-config)))
          (js/process.exit 0))
