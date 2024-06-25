@@ -42,7 +42,7 @@ usage () {
   echo >&2 "  --remote REMOTE          - Remote address for geneve/vxlan types"
   echo >&2 "  --vni VNI                - Virtual Network Identifier for geneve/vxlan types"
   echo >&2 ""
-  echo >&2 "  --netem NETEM            - tc qdisc netem OPTIONS (man 8 netem)"
+  echo >&2 "  --netem NETEM            - tc qdisc netem OPTIONS (man 8 netem) (can repeat)"
   echo >&2 "  --nat TARGET             - Stateless NAT traffic to/from TARGET"
   echo >&2 "                             (in primary/PID0 netns)"
   echo >&2 ""
@@ -104,7 +104,7 @@ while [ "${*}" ]; do
   --remote)         REMOTE="${OPTARG}"; shift ;;
   --vni)            VNI="${OPTARG}"; shift ;;
 
-  --netem)          NETEM="${OPTARG}"; shift ;;
+  --netem)          NETEM="${NETEM} ${OPTARG}"; shift ;;
   --nat)            NAT="${OPTARG}"; shift ;;
   -h|--help)        usage ;;
   *)                positional="${positional} $1" ;;

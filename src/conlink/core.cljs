@@ -124,6 +124,7 @@ General Options:
         bridge (get bridges bridge)
         route (if (string? route) [route] route)
         forward (if (string? forward) [forward] forward)
+        netem (if (string? netem) [netem] netem)
         link (merge
                link
                {:type type
@@ -142,7 +143,9 @@ General Options:
                           [(js/parseInt port_a) (js/parseInt port_b) proto])
                        forward)})
                (when (and forward docker-eth0-address)
-                 {:route (conj route (str docker-eth0-address "/32"))}))]
+                 {:route (conj route (str docker-eth0-address "/32"))})
+               (when netem
+                 {:netem netem}))]
     (when forward
       (let [link-id (str (or (:service link) (:container link)) ":" dev)
             pre (str "link '" link-id "' has forward setting")]
