@@ -44,7 +44,7 @@
   (js/process.exit code))
 
 (defn deep-merge [a b]
-  (merge-with #(cond (map? %1) (recur %1 %2)
+  (merge-with #(cond (map? %1) (deep-merge %1 %2)
                      (vector? %1) (vec (concat %1 %2))
                      (sequential? %1) (concat %1 %2)
                      :else %2)
