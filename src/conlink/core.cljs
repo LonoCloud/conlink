@@ -171,11 +171,11 @@ General Options:
         _ (when (and (= :patch mode) (not kmod-mirred?))
             (warn (str "bridge " bridge " mode is 'patch', "
                        "but no 'act_mirred' kernel module loaded, "
-                       " assuming it will load when needed.")))
+                       "assuming it will load when needed.")))
         _ (when (and (= :auto mode) (not kmod-ovs?))
             (warn (str "bridge " bridge " mode is 'auto', "
-                       " but no 'openvswitch' kernel module loaded, "
-                       " so falling back to 'linux'")))
+                       "but no 'openvswitch' kernel module loaded, "
+                       "so falling back to 'linux'")))
         mode (if (= :auto mode)
               (if kmod-ovs? :ovs :linux)
               mode)]
@@ -218,8 +218,7 @@ General Options:
          (if (not (empty? params)) (str " " params) ""))))
 
 (defn check-schema [data schema verbose]
-  (let [{:keys [info warn]} @ctx
-        ajv (Ajv. #js {:allErrors true})
+  (let [ajv (Ajv. #js {:allErrors true})
         validator (.compile ajv (->js schema))
         valid (validator (->js data))]
     (if valid
