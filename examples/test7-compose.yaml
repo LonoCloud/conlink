@@ -28,7 +28,12 @@ services:
           ip: 10.0.1.1/16
           mac: 00:0a:0b:0c:0d:01
           mtu: 4111
-          netem: "delay 40ms rate 10mbit"
+          netem: "rate 10mbit delay 40ms"
         - bridge: s2
           ip: 100.0.1.1/16
           dev: eth1
+
+x-network:
+  links:
+    # The delay setting is overridden by the one in the service
+    - {service: node, bridge: s1, netem: "delay 200ms"}
