@@ -595,8 +595,9 @@ General Options:
   running in a container)"
   []
   (P/let [[cgroup mountinfo]
-          , (P/all [(read-file "/proc/self/cgroup" "utf8")
-                    (read-file "/proc/self/mountinfo" "utf8")])
+          , (P/catch (P/all [(read-file "/proc/self/cgroup" "utf8")
+                             (read-file "/proc/self/mountinfo" "utf8")])
+              #(vector "" ""))
           ;; docker
           d-cgroups (map second (re-seq #"/docker/([^/\n]*)" cgroup))
           ;; podman (root)
