@@ -204,18 +204,29 @@ General Options:
         bridges (reduce (fn [bs [k v]]
                           (assoc bs k (enrich-bridge v opts)))
                         {} all-bridges)
-        links (mapv #(enrich-link % bridges opts) links)
-        cfg (merge cfg {:links links
-                        :bridges bridges
-                        :containers {}
-                        :services {}})
+        ;; Restructure links into map to merge and enrich.
+        ;; Merge key is server/container + dev
+        link-map (reduce (fn [ls link]
+                           (let [elink (enrich-link link bridges opts)
+                                 lid (str (or (:service link)
+                                              (:container link))
+                                          ":" (:dev elink))
+                                 mlink (deep-merge (get ls lid) elink)]
+                             (assoc ls lid mlink)))
+                         {} links)
+
+        cfg {:bridges bridges
+             :tunnels tunnels
+             :containers {}
+             :services {}}
         rfn (fn [kind cfg {:as x :keys [container service]}]
               (cond-> cfg
                 container (update-in [:containers container kind] conjv x)
                 service   (update-in [:services   service kind] conjv x)))
-        cfg (reduce (partial rfn :links) cfg links)
+        cfg (reduce (partial rfn :links) cfg (vals link-map))
         cfg (reduce (partial rfn :commands) cfg commands)]
     cfg))
+
 
 (defn ajv-error-to-str [error]
   (let [path (:instancePath error)
