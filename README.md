@@ -103,12 +103,12 @@ The following table describes the link properties:
 | ip        | *          | CIDR           |         | IP CIDR 7                |
 | mac       | 3          | MAC            |         | MAC addr 7               |
 | mtu       | *          | number 4       | 65535   | intf MTU                 |
-| route     | *          | string         |         | ip route add args        |
+| route     | *          | strings 8      |         | ip route add args        |
 | nat       | *          | IP             |         | DNAT/SNAT to IP          |
-| netem     | *          | string         |         | tc qdisc NetEm options   |
+| netem     | *          | strings 8      |         | tc qdisc NetEm options   |
 | mode      | 5          | string         |         | virt intf mode           |
 | vlanid    | vlan       | number         |         | VLAN ID                  |
-| forward   | veth       | string array 6 |         | forward conlink ports 7  |
+| forward   | veth       | strings 6 8    |         | forward conlink ports 7  |
 
 - 1 - veth, dummy, vlan, ipvlan, macvlan, ipvtap, macvtap
 - 2 - defaults to outer compose service
@@ -117,6 +117,7 @@ The following table describes the link properties:
 - 5 - macvlan, macvtap, ipvlan, ipvtap
 - 6 - string syntax: `conlink_port:container_port/proto`
 - 7 - offset by scale/replica index
+- 8 - either a single string or an array of strings
 
 Each link has a 'type' key that defaults to "veth" and each link
 definition must also have either a `service` key or a `container` key.

@@ -42,7 +42,6 @@ properties:
         mac:       { "$ref": "#/$defs/mac" }
         mtu:       {type: number}
         nat:       { "$ref": "#/$defs/ip" }
-        netem:     {type: string}
         mode:      {type: string}
         vlanid:    {type: number}
         route:
@@ -51,6 +50,9 @@ properties:
         forward:
           oneOf: [{ "$ref": "#/$defs/fwd" },
                   {type: array, items: { "$ref": "#/$defs/fwd" }}]
+        netem:
+          oneOf: [{type: string},
+                  {type: array, items: {type: string}}]
 
   bridges:
     type: array
@@ -69,7 +71,9 @@ properties:
         bridge:    {type: string}
         remote:    { "$ref": "#/$defs/ip" }
         vni:       {type: number}
-        netem:     {type: string}
+        netem:
+          oneOf: [{type: string},
+                  {type: array, items: {type: string}}]
 
   commands:
     type: array
