@@ -201,21 +201,21 @@ General Options:
                             bridge-map
                             (keep :bridge links))
         ;; Enrich each bridge
-        bridges (reduce (fn [bs [k v]]
-                          (assoc bs k (enrich-bridge v opts)))
-                        {} all-bridges)
-        ;; Restructure links into map to merge and enrich.
-        ;; Merge key is server/container + dev
+        enriched-bridges (reduce (fn [bs [k v]]
+                                   (assoc bs k (enrich-bridge v opts)))
+                                 {} all-bridges)
+        ;; Restructure links into a map to merge
         link-map (reduce (fn [ls link]
-                           (let [elink (enrich-link link bridges opts)
-                                 lid (str (or (:service link)
+                           ;; Merge key is server/container + dev
+                           (let [lid (str (or (:service link)
                                               (:container link))
-                                          ":" (:dev elink))
-                                 mlink (deep-merge (get ls lid) elink)]
-                             (assoc ls lid mlink)))
+                                          ":" (get link :dev "eth0"))]
+                             (update ls lid deep-merge link)))
                          {} links)
+        enriched-links (map #(enrich-link % enriched-bridges opts)
+                            (vals link-map))
 
-        cfg {:bridges bridges
+        cfg {:bridges enriched-bridges
              :tunnels tunnels
              :containers {}
              :services {}}
@@ -223,7 +223,7 @@ General Options:
               (cond-> cfg
                 container (update-in [:containers container kind] conjv x)
                 service   (update-in [:services   service kind] conjv x)))
-        cfg (reduce (partial rfn :links) cfg (vals link-map))
+        cfg (reduce (partial rfn :links) cfg enriched-links)
         cfg (reduce (partial rfn :commands) cfg commands)]
     cfg))
 
