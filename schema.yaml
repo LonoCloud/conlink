@@ -53,6 +53,9 @@ properties:
         netem:
           oneOf: [{type: string},
                   {type: array, items: {type: string}}]
+        ethtool:
+          oneOf: [{type: string},
+                  {type: array, items: {type: string}}]
 
   bridges:
     type: array
