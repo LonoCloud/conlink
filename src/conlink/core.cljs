@@ -32,6 +32,8 @@ General Options:
                                     [default: auto] [env: CONLINK_BRIDGE_MODE]
   --default-mtu MTU                 Default link MTU (for non *vlan types)
                                     [default: 65535]
+  --keep-veth-offload               Do not add '--offload tx off' as the first
+                                    ethtool setting for container veth interfaces
   --network-file NETWORK-FILE...    Network config file
   --compose-file COMPOSE-FILE...    Docker compose file with network config
   --compose-project NAME            Docker compose project name for resolving
@@ -57,7 +59,8 @@ General Options:
                         " --system-id=random --no-mlockall --delete-bridges"))
 
 (def VLAN-TYPES #{:vlan :macvlan :macvtap :ipvlan :ipvtap})
-(def LINK-ADD-OPTS [:ip :mac :route :mtu :nat :netem :mode :vlanid :remote :vni])
+(def LINK-ADD-OPTS [:ip :mac :route :mtu :nat :netem :ethtool
+                    :mode :vlanid :remote :vni])
 (def INTF-MAX-LEN 15)
 (def DOCKER-INTF "DOCKER-ETH0")
 
@@ -112,9 +115,9 @@ General Options:
     - mac: random MAC starting with first octet of 'c2'
     - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
-  [{:as link :keys [type base bridge ip route forward netem]} bridges opts]
+  [{:as link :keys [type bridge ip route forward netem ethtool]} bridges opts]
   (let [{:keys [docker-eth0? docker-eth0-address]} @ctx
-        {:keys [default-mtu]} opts
+        {:keys [default-mtu keep-veth-offload]} opts
         type (keyword (or type "veth"))
         dev (get link :dev "eth0")
         mac (get link :mac (random-mac))
@@ -126,12 +129,17 @@ General Options:
         route (if (string? route) [route] route)
         forward (if (string? forward) [forward] forward)
         netem (if (string? netem) [netem] netem)
+        ethtool-pre (if (and (= :veth type) (not keep-veth-offload))
+                      ["--offload tx off"]
+                      [])
+        ethtool (into ethtool-pre (if (string? ethtool) [ethtool] ethtool))
         link (merge
                link
                {:type type
                 :dev  dev
                 :base base
-                :mac mac}
+                :mac mac
+                :ethtool ethtool}
                (when bridge
                  {:bridge bridge})
                (when (not (VLAN-TYPES type))

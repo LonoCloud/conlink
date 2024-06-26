@@ -29,6 +29,7 @@ services:
           mac: 00:0a:0b:0c:0d:01
           mtu: 4111
           netem: "rate 10mbit delay 40ms"
+          ethtool: "--offload rx off"
         - bridge: s2
           ip: 100.0.1.1/16
           dev: eth1

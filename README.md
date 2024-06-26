@@ -146,6 +146,7 @@ The following table describes the link properties:
 | mode      | 5          | string         |         | virt intf mode           |
 | vlanid    | vlan       | number         |         | VLAN ID                  |
 | forward   | veth       | strings 6 8    |         | forward conlink ports 7  |
+| ethtool   | veth       | strings 8      |         | ethtool settings         |
 
 - 1 - veth, dummy, vlan, ipvlan, macvlan, ipvtap, macvtap
 - 2 - defaults to outer compose service
@@ -187,6 +188,12 @@ forwarded then the second replica will have port 81 forwarded.
 For publicly publishing a port, the conlink container needs to be on
 a docker network and the `conlink_port` should match the target port
 of a docker published port (for the conlink container).
+
+For the `ethtool` property, refer to the `ethtool` man page. The
+syntax for each ethtool setting is basically the ethtool command line
+arguments without the "devname. So the equivalent of the ethtool
+command `ethtool --offload eth0 rx off` would be link configuration
+`{dev: eth0, ethtool: ["--offload rx off"], ...}`.
 
 ### Bridges
 
