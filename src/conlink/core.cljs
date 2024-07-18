@@ -663,7 +663,8 @@ General Options:
     [container (inspect-container container-obj)
      clabels (get-compose-labels container)
      svc-num (:container-number clabels)]
-    {:name (->> container :Name (re-seq #"(.*/)?(.*)") first last)
+    {:id (:Id container)
+     :name (->> container :Name (re-seq #"(.*/)?(.*)") first last)
      :index (if svc-num (js/parseInt svc-num) 1)
      :service (:service clabels)
      :pid (-> container :State :Pid)
