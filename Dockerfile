@@ -1,4 +1,4 @@
-FROM node:16 as build
+FROM node:16 AS build
 
 RUN apt-get -y update && \
     apt-get -y install libpcap-dev default-jdk-headless
@@ -19,7 +19,7 @@ RUN cd /app && \
     shadow-cljs compile conlink && \
     chmod +x build/*.js
 
-FROM node:16-slim as run
+FROM node:16-slim AS run
 
 RUN apt-get -y update
 # Runtime deps and utilities
@@ -31,5 +31,5 @@ COPY --from=build /app/ /app/
 ADD link-add.sh link-del.sh link-mirred.sh link-forward.sh /app/
 ADD schema.yaml /app/build/
 
-ENV PATH /app:$PATH
+ENV PATH=/app:$PATH
 WORKDIR /app
