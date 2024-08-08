@@ -112,7 +112,7 @@ General Options:
   - Add default values to a link:
     - type: veth
     - dev: eth0
-    - mac: random MAC starting with first octet of 'c2'
+    - mac: random MAC starting with first octet of 'c2' (not added to ipvlan)
     - mtu: --default-mtu (for non *vlan type)
     - base: :conlink for veth type, :host for *vlan types, :local otherwise"
   [{:as link :keys [type bridge ip route forward netem ethtool]} bridges opts]
@@ -120,7 +120,8 @@ General Options:
         {:keys [default-mtu keep-veth-offload]} opts
         type (keyword (or type "veth"))
         dev (get link :dev "eth0")
-        mac (get link :mac (random-mac))
+        mac (when-not (= :ipvlan type)
+              (get link :mac (random-mac)))
         base-default (cond (= :veth type)     :conlink
                            (VLAN-TYPES type)  :host
                            :else              :local)
@@ -138,10 +139,11 @@ General Options:
                {:type type
                 :dev  dev
                 :base base
-                :mac mac
                 :ethtool ethtool}
                (when bridge
                  {:bridge bridge})
+               (when mac
+                 {:mac mac})
                (when (not (VLAN-TYPES type))
                  {:mtu  (get link :mtu default-mtu)})
                (when route
