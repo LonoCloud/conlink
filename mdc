@@ -30,7 +30,7 @@ RESOLVED_MODES="$(${RESOLVE_DEPS} --path "${MODES_DIR}" --format=paths ${MODE_SP
 
 COMPOSE_FILE=./.compose-empty.yaml
 cat /dev/null > ${ENV_FILE}-mdc-tmp
-echo -e "version: '2.4'\nservices: {}" > ./.compose-empty.yaml
+echo -e "services: {}" > ./.compose-empty.yaml
 
 vecho "Removing ${MDC_FILES_DIR}"
 case "$(basename ${MDC_FILES_DIR})" in
