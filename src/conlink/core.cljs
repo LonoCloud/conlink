@@ -979,7 +979,9 @@ General Options:
                (P/let
                  [event-filter {"event" ["start" "die"]}
                   ;; Listen for docker and/or podman events
-                  _ (docker-listen client event-filter handle-event)
+                  ;; NOTE: sometimes (podman on macos) this blocks
+                  ;; until the first event. Wrap it to skip await.
+                  _ [(docker-listen client event-filter handle-event)]
                   containers ^obj (list-containers client)]
                  ;; Generate fake events for existing containers
                  (P/all (for [container containers
