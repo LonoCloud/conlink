@@ -906,7 +906,7 @@ General Options:
      docker-eth0-addresses (when docker-eth0? (intf-ipv4-addresses "eth0"))
      _ (swap! ctx merge {:kmod-ovs? kmod-ovs?
                          :kmod-mirred? kmod-mirred?
-                         :docker-eth0? docker-eth0?
+                         :docker-eth0? (or docker-eth0? show-config)
                          :docker-eth0-address (first docker-eth0-addresses)})
      network-config (P/-> (load-configs compose-file network-file)
                           (interpolate-walk env)
