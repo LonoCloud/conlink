@@ -57,11 +57,12 @@
   (let [graph (digraph {:splines true :compound true})
         host (subgraph graph "cluster_host" "host system" HOST-PROPS)
         conlink (subgraph host "cluster_conlink" "conlink/network" CONLINK-PROPS)
+        links (->> network-config :services vals (map :links) (apply concat))
         bridges (reduce
                   #(->> (subgraph conlink (str "cluster_bridge_" %2)
                                   %2 BRIDGE-PROPS)
                         (assoc %1 %2))
-                  {} (map :bridge (keep :bridge (:links network-config))))
+                  {} (keys (:bridges network-config)))
         services (reduce
                    #(->> (subgraph host (str "cluster_service_" (dot-id %2))
                                    (str "service '" (name %2) "'") SVC-PROPS)
@@ -73,7 +74,7 @@
                            (assoc %1 %2))
                      {} (keys (:containers network-config)))]
 
-    (doseq [link (:links network-config)]
+    (doseq [link links]
       (let [{:keys [service container dev outer-dev bridge base]} link
             cname (or service container)
             cnode (get (if service services containers) (keyword cname))
@@ -85,7 +86,7 @@
                                    "-" (name dev)))
                 out-id (str "out-" outer-dev)
                 out-parent (condp = (keyword base)
-                             :conlink (get bridges (:bridge bridge))
+                             :conlink (get bridges (keyword (:bridge bridge)))
                              :host host)
                 {:keys [type vlanid]} link
                 [elabel iprops] (if (= "host" base)
