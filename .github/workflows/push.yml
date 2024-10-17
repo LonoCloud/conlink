@@ -7,7 +7,7 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  compose-tests:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,3 +22,11 @@ jobs:
       - name: "dctest test/test*.yaml"
         timeout-minutes: 5
         run: time node_modules/.bin/dctest --verbose-commands conlink-test $(ls -v test/test*.yaml)
+
+      - name: Check --show-config and net2dot
+        run: |
+          cfg=$(./conlink --show-config --compose-file examples/test1-compose.yaml)
+          summary=$(echo "${cfg}" | jq -r '.|"\(.bridges|keys|sort|join(".")) \(.services|keys|sort|join("."))"')
+          [ "${summary}" = "s1.s2.s3 h1.h2.h3.r0" ]
+          dot=$(echo "${cfg}" | ./net2dot)
+          [ $(echo "${dot}" | grep "r0.*eth" | wc -l) -ge 10 ]
