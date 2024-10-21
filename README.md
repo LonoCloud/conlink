@@ -1,7 +1,50 @@
-# conlink: Declarative Low-Level Networking for Containers
+# conlink
 
-Create (layer 2 and layer 3) networking between containers using
-a declarative configuration.
+[![npm](https://img.shields.io/npm/v/conlink.svg)](https://www.npmjs.com/package/conlink)
+[![docker](https://img.shields.io/docker/v/lonocloud/conlink.svg)](https://hub.docker.com/r/lonocloud/conlink)
+
+## Declarative Low-Level Networking for Containers
+
+conlink replaces the standard Docker Compose networking for all or portions of
+your project, providing fine-grained control over layer 2 and layer 3 networking
+with a declarative configuration syntax.
+
+```yaml
+services:
+  # 1. Add conlink to your Docker Compose file, and point it to your network
+  #    config file, which can be the Docker Compose file itself!
+  network:
+    image: lonocloud/conlink:latest
+    pid: host
+    network_mode: none
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, NET_BROADCAST, IPC_LOCK]
+    security_opt: [ 'apparmor:unconfined' ]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker
+      - ./:/test
+    command: /app/build/conlink.js --compose-file /test/docker-compose.yaml
+
+  node:
+    image: alpine
+    # 2. Disable standard Docker Compose networking where desired
+    network_mode: none
+    command: sleep Infinity
+    # 3. Create links with complete control over interface naming,
+    #    addressing, routing, and much more! Any necessary "switches"
+    #    (bridges) are created automatically.
+    x-network:
+      links:
+        - {bridge: s1, ip: 10.0.1.1/24}
+```
+
+Check out the [runnable examples](https://github.com/LonoCloud/conlink/tree/master/examples)
+for more ideas on what is possible. [This guide](https://lonocloud.github.io/conlink/#/guides/examples)
+walks through how to run each example.
+
+The [reference documentation](https://lonocloud.github.io/conlink/#/reference/network-configuration-syntax)
+contains the full list of configuration options. Be sure to also read [usage notes](https://lonocloud.github.io/conlink/#/usage-notes),
+which highlight some unique aspects of using conlink-provided networking.
 
 Conlink also includes scripts that make docker compose a much more
 powerful development and testing environment (refer to
