@@ -1,5 +1,9 @@
 # Usage Notes
 
+Conlink runs as another container in the Docker Compose project. As a
+result, there are some important things to know when using conlink
+instead of the default Docker Compose networking.
+
 ## Asynchronous startup
 
 The conlink managed container links are created after the main process

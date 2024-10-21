@@ -1,7 +1,10 @@
 # Examples
 
-The examples below require a conlink docker image. Build the image for
-both docker and podman like this:
+The [examples](https://github.com/LonoCloud/conlink/tree/master/examples)
+directory contains the necessary files to follow along below.
+
+The examples also require a conlink docker image. Build the image for both
+docker and podman like this:
 
 ```
 docker build -t conlink .
