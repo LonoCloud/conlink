@@ -1,4 +1,11 @@
-# Compose scripts: mdc, wait.sh, and copy.sh
+# Compose scripts
+
+Conlink also includes scripts that make docker compose a much more
+powerful development and testing environment:
+
+* `mdc` - modular management of multiple compose configurations
+* `wait.sh` - wait for network and file conditions before continuing
+* `copy.sh` - recursively copy files with variable templating
 
 ## mdc
 
