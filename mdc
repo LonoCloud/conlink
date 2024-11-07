@@ -22,6 +22,7 @@ which ${RESOLVE_DEPS} >/dev/null 2>/dev/null \
 
 # Resolve mode directory paths
 
+MDC_CLI="${0} ${*}"
 MODE_SPEC="${1}"; shift
 RESOLVED_MODES="$(${RESOLVE_DEPS} --path "${MODES_DIR}" --format=paths ${MODE_SPEC})"
 
@@ -29,7 +30,7 @@ RESOLVED_MODES="$(${RESOLVE_DEPS} --path "${MODES_DIR}" --format=paths ${MODE_SP
 # to the same root directory.  Create files dir.
 
 COMPOSE_FILE=./.compose-empty.yaml
-cat /dev/null > ${ENV_FILE}-mdc-tmp
+echo "### mdc command line: ${MDC_CLI}" > ${ENV_FILE}-mdc-tmp
 echo -e "services: {}" > ./.compose-empty.yaml
 
 vecho "Removing ${MDC_FILES_DIR}"
