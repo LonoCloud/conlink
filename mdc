@@ -74,6 +74,8 @@ for resolved in ${RESOLVED_MODES}; do
     for efile in ${efiles}; do
         if [ -e "${efile}" ]; then
             echo "### mdc begin mode ${mode} (${efile})" >> ${ENV_FILE}-mdc-tmp
+            # Add MDC_MODE_ prefixed environment variable for each mode
+            echo "MDC_MODE_${mode//[^a-zA-Z]/_}=enabled" >> ${ENV_FILE}-mdc-tmp
             vecho "cat ${efile} >> ${ENV_FILE}-mdc-tmp"
             cat ${efile} >> ${ENV_FILE}-mdc-tmp
             echo >> ${ENV_FILE}-mdc-tmp

@@ -57,7 +57,7 @@ of docker compose:
      compose file paths from each resolved mode/module directory.
    * `COMPOSE_DIR`: The directory where the top-level `.env` is
      created.
-   * `COMPOSE_PRPOFILES`: A comma separated list of each resolved
+   * `COMPOSE_PROFILES`: A comma separated list of each resolved
      mode/module with a `MODE_` prefix on the name. These are docker
      compose profiles that can be used to enable services in one
      mode/module compose file when a different mode/module is
@@ -65,6 +65,10 @@ of docker compose:
      "bar" has a service that should only be enabled when the "foo"
      mode/module is also requested/resolved, then the service can be
      tagged with the `MODE_foo` profile.
+   * `MDC_MODE_[mode]`: Each active mode will have an environment
+     variable set to 'enabled'. Important Note: the mode name will
+     have all non-alphanumeric characters changed to an underscore so
+     that it is usable as the environment variable suffix.
    * `MDC_MODE_DIRS`: A comma separated list of mode/module
      directories. This can be used by other external tools that have
      specific mode/module behavior.
