@@ -615,17 +615,9 @@ General Options:
   if no container ID can be determined (e.g. we are probably not
   running in a container)"
   []
-  (P/let [[cgroup mountinfo]
-          , (P/catch (P/all [(read-file "/proc/self/cgroup" "utf8")
-                             (read-file "/proc/self/mountinfo" "utf8")])
-              #(vector "" ""))
-          ;; docker
-          d-cgroups (map second (re-seq #"/docker/([^/\n]*)" cgroup))
-          ;; podman (root)
-          p-cgroups (map second (re-seq #"libpod-([^/.\n]*)" cgroup))
-          ;; general fallback
-          o-mounts (map second (re-seq #".*containers/([^/]{64})/.*/etc/hosts" mountinfo))]
-    (first (concat d-cgroups p-cgroups o-mounts))))
+  (P/->> (P/catch (read-file "/proc/self/mountinfo" "utf8") (constantly ""))
+         (re-find #".*containers/([^/]{64})/.*/etc/hosts")
+         second))
 
 (defn list-containers
   "Return a sequence of container objects optionally limited to those
