@@ -624,7 +624,7 @@ General Options:
           ;; podman (root)
           p-cgroups (map second (re-seq #"libpod-([^/.\n]*)" cgroup))
           ;; general fallback
-          o-mounts (map second (re-seq #"containers/([^/]{64})/.*/etc/hosts" mountinfo))]
+          o-mounts (map second (re-seq #".*containers/([^/]{64})/.*/etc/hosts" mountinfo))]
     (first (concat d-cgroups p-cgroups o-mounts))))
 
 (defn list-containers
