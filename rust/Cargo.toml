@@ -1,0 +1,25 @@
+[package]
+name = "conlink-utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nix = "0.23"
+which = "4.4"
+anyhow = "1.0"
+structopt = "0.3"
+walkdir = "2.3"
+regex = "1.5"
+
+[[bin]]
+name = "wait"
+path = "src/wait.rs"
+
+[[bin]]
+name = "copy"
+path = "src/copy.rs"
+
+[[bin]]
+name = "echo"
+path = "src/echo.rs"
+

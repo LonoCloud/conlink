@@ -4,6 +4,6 @@
 - **Reference**
   - [Network Configuration Syntax](/reference/network-configuration-syntax.md)
 - **Guides**
-  - [Compose Scripts](/guides/compose-scripts.md)
+  - [Compose Tools](/guides/compose-tools.md)
   - [Graphviz Rendering](/guides/graphviz-rendering.md)
   - [Examples](/guides/examples.md)

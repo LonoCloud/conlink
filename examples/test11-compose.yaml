@@ -1,0 +1,47 @@
+x-network:
+  links:
+    - {service: webserver, bridge: ctl, dev: eth0, ip: 192.168.100.10/24}
+    - {service: client,    bridge: ctl, dev: eth0, ip: 192.168.100.20/24}
+
+x-hosts: &hosts
+  webserver: 192.168.100.10
+  client:    192.168.100.20
+
+x-service: &service-base
+  depends_on: {extract-utils: {condition: service_completed_successfully}}
+  image: python
+  network_mode: none
+  extra_hosts: { <<: *hosts }
+  volumes:
+    - ../utils:/utils:ro
+    - ../test:/test:ro
+
+services:
+  extract-utils:
+    build: {context: ../, dockerfile: Dockerfile}
+    network_mode: none
+    volumes:
+      - ../utils:/conlink_utils
+    command: cp /utils/wait /utils/copy /utils/echo /conlink_utils/
+
+  webserver:
+    <<: *service-base
+    environment:
+      - VAL2=val2
+    working_dir: /tmp
+    command: /utils/copy -T /test /tmp -- /utils/wait -I eth0 -- python -m http.server 8080
+
+  client:
+    <<: *service-base
+    command: /utils/wait -I eth0 -t webserver:8080 -- sh -c 'while [ "val2" = $(curl -s webserver:8080/dir1/dir2/file2 | tee -a /var/log/test.log) ]; do sleep 5; done'
+
+  network:
+    build: {context: ../}
+    pid: host
+    network_mode: none
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, NET_BROADCAST, IPC_LOCK]
+    security_opt: [ 'apparmor:unconfined' ] # needed on Ubuntu 18.04
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/test
+    command: /app/build/conlink.js --compose-file /test/test11-compose.yaml

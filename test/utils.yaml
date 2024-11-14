@@ -1,0 +1,69 @@
+x-service: &service-base
+  image: alpine
+  volumes:
+    - state:/state
+    - ../utils:/utils
+    - ../test:/test:ro
+
+services:
+  clean:
+    <<: *service-base
+    command: sh -c 'rm -vf /state/*; ls -l /state/'
+
+  extract-utils:
+    build: {context: ../, dockerfile: Dockerfile}
+    user: ${USER_ID:-0}:${GROUP_ID:-0}
+    volumes:
+      - ../utils:/conlink_utils
+    command: cp /utils/wait /utils/wait.sh /utils/copy /utils/copy.sh /utils/echo /conlink_utils/
+
+  # Verify wait functionality
+  wait-alpine:
+    <<: *service-base
+    depends_on: {clean:       {condition: service_completed_successfully},
+                 extract-utils: {condition: service_completed_successfully}}
+    command: /utils/wait -c "sleep 1" -f /state/file -i eth0 -I eth0 -t tcp:8080 -- echo "wait finished"
+
+  # Verify wait works in a scratch image (no shell or other files)
+  wait-empty:
+    <<: *service-base
+    image: !unset
+    depends_on: {clean:       {condition: service_completed_successfully},
+                 extract-utils: {condition: service_completed_successfully}}
+    build: {dockerfile: Dockerfile.empty}
+    command: ["/utils/wait", "-f", "/state/file", "-i", "eth0", "-I", "eth0", "-t", "tcp:8080", "--", "/utils/echo", "'wait finished'"]
+
+   # Verify copy unctionality
+  copy-alpine:
+    <<: *service-base
+    depends_on: {extract-utils: {condition: service_completed_successfully}}
+    environment:
+      - VAL2=val2
+    command: sh -c 'mkdir /tmp/dir1 && /utils/copy -T /test/dir1 /tmp/dir1 && grep -q "val1" /tmp/dir1/file1 && grep -q "val2" /tmp/dir1/dir2/file2 && echo "copy finished"'
+
+  file:
+    <<: *service-base
+    depends_on: {clean:       {condition: service_completed_successfully},
+                 wait-alpine: {condition: service_started},
+                 wait-empty:  {condition: service_started}}
+    command: sh -c 'sleep 2 && touch /state/file'
+
+  tcp:
+    <<: *service-base
+    depends_on: {wait-alpine: {condition: service_started},
+                 wait-empty:  {condition: service_started}}
+    # Accepts two connections and then exits
+    command: sh -c 'sleep 3 && nc -l -p 8080 && nc -l -p 8080'
+
+  test:
+    <<: *service-base
+    depends_on: {file:         {condition: service_started},
+                 tcp:          {condition: service_started},
+                 wait-alpine:  {condition: service_completed_successfully},
+                 wait-empty:   {condition: service_completed_successfully},
+                 copy-alpine:  {condition: service_completed_successfully}}
+    command: echo "Success"
+
+
+volumes:
+  state: {}

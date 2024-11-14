@@ -46,14 +46,14 @@ The [reference documentation](https://lonocloud.github.io/conlink/#/reference/ne
 contains the full list of configuration options. Be sure to also read [usage notes](https://lonocloud.github.io/conlink/#/usage-notes),
 which highlight some unique aspects of using conlink-provided networking.
 
-Conlink also includes scripts that make docker compose a much more
+Conlink also includes tools that make docker compose a much more
 powerful development and testing environment (refer to
-[Compose scripts](https://lonocloud.github.io/conlink/#/guides/compose-scripts) for
+[Compose Tools](https://lonocloud.github.io/conlink/#/guides/compose-tools) for
 details):
 
-* [mdc](https://lonocloud.github.io/conlink/#/guides/compose-scripts?id=mdc): modular management of multiple compose configurations
-* [wait.sh](https://lonocloud.github.io/conlink/#/guides/compose-scripts?id=waitsh): wait for network and file conditions before continuing
-* [copy.sh](https://lonocloud.github.io/conlink/#/guides/compose-scripts?id=copysh): recursively copy files with variable templating
+* [mdc](https://lonocloud.github.io/conlink/#/guides/compose-tools?id=mdc): modular management of multiple compose configurations
+* [wait](https://lonocloud.github.io/conlink/#/guides/compose-tools?id=wait): wait for network and file conditions before continuing
+* [copy](https://lonocloud.github.io/conlink/#/guides/compose-tools?id=copy): recursively copy files with variable templating
 
 ## Why conlink?
 

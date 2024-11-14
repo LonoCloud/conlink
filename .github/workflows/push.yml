@@ -23,6 +23,11 @@ jobs:
         timeout-minutes: 5
         run: time node_modules/.bin/dctest --verbose-commands conlink-test $(ls -v test/test*.yaml)
 
+      - name: "show logs"
+        if: always()
+        run: |
+          docker compose -p conlink-test logs --no-color -t || true
+
       - name: Check --show-config and net2dot
         run: |
           cfg=$(./conlink --show-config --compose-file examples/test1-compose.yaml)

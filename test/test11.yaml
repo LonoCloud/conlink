@@ -1,0 +1,26 @@
+name: "test11: build and use copy and wait commands"
+
+env:
+  DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
+  COMPOSE_FILE: examples/test11-compose.yaml
+
+tests:
+  test11:
+    name: "build and use copy and wait"
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up -d --force-recreate
+      - exec: :host
+        run: |
+          echo "waiting for conlink startup"
+          ${DC} logs network | grep "All links connected"
+        repeat: { retries: 30, interval: '1s' }
+
+      - exec: client
+        run: grep "val2" /var/log/test.log
+        repeat: { retries: 10, interval: '1s' }
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1
