@@ -14,7 +14,7 @@
     "yaml": "^2.2.1"
   },
   "devDependencies": {
-    "@lonocloud/dctest": "0.1.1",
+    "@lonocloud/dctest": "^0.3.1",
     "docsify-cli": "^4.4.4",
     "shadow-cljs": "^2.25.7",
     "source-map-support": "^0.5.21"
