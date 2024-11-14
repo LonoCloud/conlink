@@ -393,3 +393,25 @@ docker-compose -f examples/test10-compose.yaml exec node1 ping 10.2.0.2
 docker-compose -f examples/test10-compose.yaml exec node2 ping 10.1.0.1
 
 ```
+
+## test11: copy/wait tools
+
+This example demonstrates the use of the `copy` and `wait` commands.
+The `copy` command recursively copies and templates files/directories.
+The `wait` command waits/blocks on certain file and network
+events/states. Refer to the guide for more information about these
+programs.
+
+Start the test11 compose configuration:
+
+```
+docker-compose -f examples/test11-compose.yaml up --build --force-recreate
+```
+
+The `webserver` service uses `copy` to populate and
+template a file hierarchy that it will serve. The `webserver` and
+`client` services both use `wait` to wait for conlink
+interfaces to be configured before continuing. Finally the `client`
+service also uses `wait` to probe the `webserver` until it accepts
+TCP connections on port 8080 before, and then it starts its main loop
+that repeatedly requests a templated file from the `webserver`.

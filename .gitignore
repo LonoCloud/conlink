@@ -1,6 +1,7 @@
 node_modules/*
 .shadow-cljs/*
 build/*
+utils/*
 podman.sock*
 *.swp
 .nfs*

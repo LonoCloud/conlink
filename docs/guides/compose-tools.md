@@ -1,11 +1,11 @@
-# Compose scripts
+# Compose Tools
 
-Conlink also includes scripts that make docker compose a much more
-powerful development and testing environment:
+Conlink includes some tools/programs that make docker compose a much
+more powerful development and testing environment:
 
 * `mdc` - modular management of multiple compose configurations
-* `wait.sh` - wait for network and file conditions before continuing
-* `copy.sh` - recursively copy files with variable templating
+* `wait` - wait for network and file conditions before continuing
+* `copy` - recursively copy files with variable templating
 
 ## mdc
 
@@ -47,8 +47,8 @@ of docker compose:
    `bar/svc1/files/etc/conf1`. When `mdc` is run this will result in
    the following two files: `.files/svc1/etc/conf1` and
    `.files/svc2/etc/conf2`. The content of `conf1` will come from the
-   "bar" mode because it is resolved second. The use of the `copy.sh`
-   script (described below) simplifies recursive file copying and also
+   "bar" mode because it is resolved second. The use of the `copy`
+   utils (described below) simplifies recursive file copying and also
    provides variable templating of copied files.
 4. **Set environment variables based on the selected modes/modules**.
    When `mdc` is run it will set the following special environment
@@ -82,49 +82,71 @@ directly merge `x-network` configuration from multiple compose files
 by passing the `COMPOSE_FILE` variable to the conlink `--compose-file`
 parameter (which supports a colon sperated list of compose files).
 
-## wait.sh
+## wait
 
-The dynamic event driven nature of conlink mean that interfaces may
+The dynamic event driven nature of conlink means that interfaces may
 appear after the container service code starts running (unlike plain
-docker container networking). For this reason, the `wait.sh` script is
+docker container networking). For this reason, the `wait` command is
 provided to simplify waiting for interfaces to appear (and other
-network conditions). Here is a compose file snippit that will wait for
-`eth0` to appear and for `eni1` to both appear and have an IP address
-assigned before running the startup command (after the `--`):
+network conditions).
+
+You can either use the shell script version at
+`conlink/scripts/wait.sh` or you can build and extract static Rust
+executables into the `conlink/utils/` directory by running this
+command:
+
+```
+USER_ID=$(id -u) GROUP_ID=$(id -g) \
+    docker compose -f conlink/test/utils.yaml run --rm extract-utils
+```
+
+Here is a compose file snippit that will wait for `eth0` to appear and
+for `eni1` to both appear and have an IP address assigned before
+running the startup command (after the `--`):
 
 ```
 services:
   svc1:
     volumes:
-      - ./conlink/scripts:/scripts:ro
-    command: /scripts/wait.sh -i eth0 -I eni1 -- /start-cmd.sh arg1 arg2
+      - ./conlink/utils:/utils:ro
+    command: /utils/wait -i eth0 -I eni1 -- /start-cmd.sh arg1 arg2
 ```
 
 In addition to waiting for interfaces and address assignment,
-`wait.sh` can also wait for a file to appear (`-f FILE`), a remote TCP
+`wait` can also wait for a file to appear (`-f FILE`), a remote TCP
 port to become accessible (`-t HOST:PORT`), or run a command until it
 completes successfully (`-c COMMAND`).
 
 
-## copy.sh
+## copy
 
-One of the features of the `mdc` command is to collect directory
+One of the features of `mdc` is composing/combining directory
 hierarchies from mode/module directories into a single `.files/`
 directory at the top-level. The intended use of the merged directory
 hierarchy is to be merged into file-systems of running containers.
 However, simple volume mounts will replace entire directory
 hierarchies (and hide all prior files under the mount point). The
-`copy.sh` script is provided for easily merging/overlaying one
+`copy` command is provided for easily merging/overlaying one
 directory hierarchy onto another one. In addition, the `-T` option
 will also replace special `{{VAR}}` tokens in the files being copied
 with the value of the matching environment variable.
 
-Here is a compose file snippit that shows the use of `copy.sh` to
+You can either use the shell script version at
+`conlink/scripts/copy.sh` or you can build and extract static Rust
+executables into the `conlink/utils/` directory by running this
+command:
+
+```
+USER_ID=$(id -u) GROUP_ID=$(id -g) \
+    docker compose -f conlink/test/utils.yaml run --rm extract-utils
+```
+
+Here is a compose file snippit that shows the use of `copy` to
 recursively copy/overlay the directory tree in `./.files/svc2` onto
 the container root file-system. In addition, due to the use of the
-`-T` option, the script will replace any occurence of the string
-`{{FOO}}` with the value of the `FOO` environment variable within any
-of the files that are copied:
+`-T` option, any occurence of the string
+`{{FOO}}` will be replaced with the value of the `FOO` environment
+variable within any of the files that are copied:
 
 ```
 services:
@@ -132,12 +154,13 @@ services:
     environment:
       - FOO=123
     volumes:
+      - ./conlink/utils:/utils:ro
       - ./.files/svc2:/files:ro
-    command: /scripts/copy.sh -T /files / -- /start-cmd.sh arg1 arg2
+    command: /utils/copy -T /files / -- /start-cmd.sh arg1 arg2
 ```
 
-Note that instances of `copy.sh` and `wait.sh` can be easily chained
+Note that instances of `copy` and `wait` can be easily chained
 together like this:
 ```
-/scripts/copy.sh -T /files / -- /scripts/wait.sh -i eth0 -- cmd args
+/utils/copy -T /files / -- /utils/wait -i eth0 -- cmd args
 ```
