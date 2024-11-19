@@ -7,7 +7,7 @@ edition = "2021"
 nix = "0.23"
 which = "4.4"
 anyhow = "1.0"
-structopt = "0.3"
+clap = { version = "4.5", features = ["derive"] }
 walkdir = "2.3"
 regex = "1.5"
 

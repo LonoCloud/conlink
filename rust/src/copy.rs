@@ -7,51 +7,50 @@ use std::{
     env,
     fs::{self, File},
     io::{Read, Write},
-    path::{PathBuf},
+    path::PathBuf,
     process::Command,
 };
-use structopt::StructOpt;
+use clap::Parser;
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "copy", about = "Recursively copy with optional templating")]
-#[structopt(usage = "copy [-T|--template] SRC_DIR DST_DIR [-- COMMAND...]")]
+#[derive(Debug, Parser)]
+#[command(name = "copy", about = "Recursively copy with optional templating")]
 struct Opt {
-    #[structopt(short = "T", long = "template",
-                help = "Enable variable substitution")]
+    #[arg(short = 'T', long = "template",
+          help = "Enable variable substitution")]
     template: bool,
 
-    #[structopt(parse(from_os_str), help = "Source directory")]
-    src_dir: PathBuf,
+    #[arg(help = "Source directory")]
+    source: PathBuf,
 
-    #[structopt(parse(from_os_str), help = "Destination directory")]
-    dst_dir: PathBuf,
+    #[arg(help = "Destination directory")]
+    destination: PathBuf,
 
-    #[structopt(name = "COMMAND", last = true, allow_hyphen_values = true,
-                help = "Optional command to run after copy")]
+    #[arg(name = "COMMAND", last = true, allow_hyphen_values = true,
+          help = "Optional command to run after copy")]
     command: Vec<String>,
 }
 
 fn main() -> Result<()> {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
-    if !opt.src_dir.is_dir() {
-        anyhow::bail!("Not a directory: '{}'", opt.src_dir.display());
+    if !opt.source.is_dir() {
+        anyhow::bail!("Not a directory: '{}'", opt.source.display());
     }
-    if !opt.dst_dir.is_dir() {
-        anyhow::bail!("Not a directory: '{}'", opt.dst_dir.display());
+    if !opt.destination.is_dir() {
+        anyhow::bail!("Not a directory: '{}'", opt.destination.display());
     }
 
     // Walk through source directory
-    for entry in walkdir::WalkDir::new(&opt.src_dir)
+    for entry in walkdir::WalkDir::new(&opt.source)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
     {
         let rel_path = entry
             .path()
-            .strip_prefix(&opt.src_dir)
+            .strip_prefix(&opt.source)
             .context("Failed to strip prefix")?;
-        let dst_path = opt.dst_dir.join(rel_path);
+        let dst_path = opt.destination.join(rel_path);
 
         // Create parent directories
         if let Some(parent) = dst_path.parent() {
