@@ -127,15 +127,18 @@ fn wait_for_interface(interface: &str, sleep_duration: u64) {
 }
 
 fn wait_for_ip_routing(interface: &str, sleep_duration: u64) {
-    let mut content = String::new();
-    while fs::File::open("/proc/net/route")
-        .and_then(|mut f| f.read_to_string(&mut content))
-        .map(|_| content.lines().any(|line| line.starts_with(interface) && line[interface.len()..]
-                                     .starts_with(|c| c == '\t' || c == ' ')))
-        .unwrap_or(false) == false
-    {
+    loop {
+        let mut content = String::new();
+        if fs::File::open("/proc/net/route")
+            .and_then(|mut f| f.read_to_string(&mut content))
+            .map(|_| content.lines().any(|line| line.starts_with(interface) && line[interface.len()..]
+                                         .starts_with(|c| c == '\t' || c == ' ')))
+            .unwrap_or(false)
+        {
+            break;
+        }
+
         println!("Waiting for IP/routing on interface: {}...", interface);
-        content.clear();
         sleep(Duration::from_secs(sleep_duration));
     }
     println!("Interface '{}' has IP/routing", interface);
