@@ -1,0 +1,17 @@
+name: "test-utils: test Rust copy and wait commands (without conlink)"
+
+env:
+  DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
+  COMPOSE_FILE: test/utils-compose.yaml
+
+tests:
+  test-utils:
+    name: "build and use copy and wait"
+    steps:
+      - exec: :host
+        run: |
+          ${DC} down --remove-orphans --volumes -t1
+          ${DC} up --force-recreate
+
+      - exec: :host
+        run: ${DC} down --remove-orphans --volumes -t1

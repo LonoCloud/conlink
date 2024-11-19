@@ -1,4 +1,4 @@
-name: "test11: build and use copy and wait commands"
+name: "test11: build and use Rust copy and wait commands"
 
 env:
   DC: "${{ process.env.DOCKER_COMPOSE || 'docker compose' }}"
