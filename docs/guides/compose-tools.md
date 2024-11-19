@@ -97,7 +97,7 @@ command:
 
 ```
 USER_ID=$(id -u) GROUP_ID=$(id -g) \
-    docker compose -f conlink/test/utils.yaml run --rm extract-utils
+    docker compose -f conlink/test/utils-compose.yaml run --rm extract-utils
 ```
 
 Here is a compose file snippit that will wait for `eth0` to appear and
@@ -138,7 +138,7 @@ command:
 
 ```
 USER_ID=$(id -u) GROUP_ID=$(id -g) \
-    docker compose -f conlink/test/utils.yaml run --rm extract-utils
+    docker compose -f conlink/test/utils-compose.yaml run --rm extract-utils
 ```
 
 Here is a compose file snippit that shows the use of `copy` to

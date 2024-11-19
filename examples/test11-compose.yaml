@@ -19,10 +19,11 @@ x-service: &service-base
 services:
   extract-utils:
     build: {context: ../, dockerfile: Dockerfile}
+    user: ${USER_ID:-0}:${GROUP_ID:-0}
     network_mode: none
     volumes:
       - ../utils:/conlink_utils
-    command: cp /utils/wait /utils/copy /utils/echo /conlink_utils/
+    command: cp /utils/wait /utils/wait.sh /utils/copy /utils/copy.sh /utils/echo /conlink_utils/
 
   webserver:
     <<: *service-base
