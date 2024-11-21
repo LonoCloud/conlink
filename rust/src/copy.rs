@@ -9,6 +9,7 @@ use std::{
     io::{Read, Write},
     path::PathBuf,
     process::Command,
+    os::unix::process::CommandExt,
 };
 use clap::Parser;
 
@@ -93,12 +94,15 @@ fn main() -> Result<()> {
 
     // Execute command if provided
     if !opt.command.is_empty() {
+        if !which::which(&opt.command[0]).is_ok() {
+            eprintln!("Error: '{}' not found", opt.command[0]);
+            std::process::exit(1);
+        }
+        // Exec the command, replacing the current process
         println!("Running: {:?}", opt.command);
-        let status = Command::new(&opt.command[0])
+        Command::new(&opt.command[0])
             .args(&opt.command[1..])
-            .status()
-            .context("Failed to execute command")?;
-        std::process::exit(status.code().unwrap_or(1));
+            .exec();
     }
 
     Ok(())

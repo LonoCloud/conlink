@@ -39,9 +39,10 @@ fn main() {
                         std::process::exit(1);
                     }
                     // Exec the command, replacing the current process
+                    println!("Running: {:?}", command);
                     Command::new(&command[0])
                         .args(&command[1..])
-                        .exec(); // This replaces the current process and doesn't return
+                        .exec();
                 }
                 return; // If no command is provided after '--', exit
             }
