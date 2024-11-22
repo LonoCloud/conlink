@@ -1,7 +1,7 @@
 ###
 ### conlink build (ClojureScript)
 ###
-FROM node:16 AS cljs-build
+FROM node:20 AS cljs-build
 
 RUN apt-get -y update && \
     apt-get -y install libpcap-dev default-jdk-headless
@@ -51,12 +51,12 @@ RUN cd /app/target/x86_64-unknown-linux-musl/release/ && cp -v wait copy echo /a
 ###
 ### conlink runtime stage
 ###
-FROM node:16-slim AS run
+FROM node:20-slim AS run
 
 RUN apt-get -y update
 # Runtime deps and utilities
 RUN apt-get -y install libpcap-dev tcpdump iproute2 iputils-ping curl \
-                       iptables bridge-utils ethtool jq netcat socat \
+                       iptables bridge-utils ethtool jq netcat-openbsd socat \
                        openvswitch-switch openvswitch-testcontroller
 
 RUN mkdir -p /app /utils
