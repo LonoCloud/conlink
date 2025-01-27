@@ -25,7 +25,7 @@ dst_dir="${1}"; shift || die 2 "Usage: ${0} [-T|--template] SRC_DIR DST_DIR"
   echo cp -a "${src}" "${dst}"
   cp -a "${src}" "${dst}" || die 1 "Failed to copy file"
   # TODO: make this configurable
-  chown root.root "${dst}" || die 1 "Unable to set ownership"
+  chown root:root "${dst}" || die 1 "Unable to set ownership"
   chmod +w "${dst}" || die 1 "Unable to make writable"
 
   [ -z "${TEMPLATE}" ] && continue
