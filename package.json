@@ -2,7 +2,7 @@
   "name": "conlink",
   "version": "2.5.7",
   "description": "conlink -  Declarative Low-Level Networking for Containers",
-  "repository": "https://github.com/LonoCloud/conlink",
+  "repository": "https://github.com/Viasat/conlink",
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "@lonocloud/resolve-deps": "^0.1.0",

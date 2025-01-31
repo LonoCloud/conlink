@@ -89,7 +89,7 @@ Resources:
 
         ## Download conlink image and repo
         docker pull lonocloud/conlink
-        git clone https://github.com/LonoCloud/conlink /root/conlink
+        git clone https://github.com/Viasat/conlink /root/conlink
         cd /root/conlink
 
         #cfn-signal -e 0 --stack ${AWS::StackName} --region ${AWS::Region} --resource WaitHandle

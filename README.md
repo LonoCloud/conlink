@@ -38,22 +38,22 @@ services:
         - {bridge: s1, ip: 10.0.1.1/24}
 ```
 
-Check out the [runnable examples](https://github.com/LonoCloud/conlink/tree/master/examples)
-for more ideas on what is possible. [This guide](https://lonocloud.github.io/conlink/#/guides/examples)
+Check out the [runnable examples](https://github.com/Viasat/conlink/tree/master/examples)
+for more ideas on what is possible. [This guide](https://viasat.github.io/conlink/#/guides/examples)
 walks through how to run each example.
 
-The [reference documentation](https://lonocloud.github.io/conlink/#/reference/network-configuration-syntax)
-contains the full list of configuration options. Be sure to also read [usage notes](https://lonocloud.github.io/conlink/#/usage-notes),
+The [reference documentation](https://viasat.github.io/conlink/#/reference/network-configuration-syntax)
+contains the full list of configuration options. Be sure to also read [usage notes](https://viasat.github.io/conlink/#/usage-notes),
 which highlight some unique aspects of using conlink-provided networking.
 
 Conlink also includes tools that make docker compose a much more
 powerful development and testing environment (refer to
-[Compose Tools](https://lonocloud.github.io/conlink/#/guides/compose-tools) for
+[Compose Tools](https://viasat.github.io/conlink/#/guides/compose-tools) for
 details):
 
-* [mdc](https://lonocloud.github.io/conlink/#/guides/compose-tools?id=mdc): modular management of multiple compose configurations
-* [wait](https://lonocloud.github.io/conlink/#/guides/compose-tools?id=wait): wait for network and file conditions before continuing
-* [copy](https://lonocloud.github.io/conlink/#/guides/compose-tools?id=copy): recursively copy files with variable templating
+* [mdc](https://viasat.github.io/conlink/#/guides/compose-tools?id=mdc): modular management of multiple compose configurations
+* [wait](https://viasat.github.io/conlink/#/guides/compose-tools?id=wait): wait for network and file conditions before continuing
+* [copy](https://viasat.github.io/conlink/#/guides/compose-tools?id=copy): recursively copy files with variable templating
 
 ## Why conlink?
 

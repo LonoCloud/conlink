@@ -6,7 +6,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Network Address functions
-;; - based on github.com/LonoCloud/clj-protocol
+;; - based on github.com/Viasat/clj-protocol
 
 (defn num->string [n base]
   #?(:cljs  (.toString n base)

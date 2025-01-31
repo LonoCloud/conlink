@@ -1,6 +1,6 @@
 # Examples
 
-The [examples](https://github.com/LonoCloud/conlink/tree/master/examples)
+The [examples](https://github.com/Viasat/conlink/tree/master/examples)
 directory contains the necessary files to follow along below.
 
 The examples also require a conlink docker image. Build the image for both
