@@ -88,7 +88,7 @@ Conlink has the following features:
 
 General:
 * docker
-* docker-compose version 1.25.4 or later.
+* docker-compose v2
 
 Other:
 * For Open vSwtich (OVS) bridging, the `openvswitch` kernel module
