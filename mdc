@@ -15,7 +15,7 @@ ENV_FILE="${ENV_FILE:-.env}"
 MDC_FILES_DIR="${MDC_FILES_DIR:-./.files}"
 LS=$(which ls)
 RESOLVE_DEPS="${RESOLVE_DEPS-./node_modules/@lonocloud/resolve-deps/resolve-deps.py}"
-DOCKER_COMPOSE="${DOCKER_COMPOSE:-docker-compose}"
+DOCKER_COMPOSE="${DOCKER_COMPOSE:-docker compose}"
 
 which ${RESOLVE_DEPS} >/dev/null 2>/dev/null \
   || die "Missing ${RESOLVE_DEPS}. Perhaps 'npm install'?"
